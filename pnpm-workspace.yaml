@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "servers/*"
+  - "packages/*"
+  - "prebuilt/*"
+  - "prebuilt/*/*"
+
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true
+
+audit:
+  level: high
