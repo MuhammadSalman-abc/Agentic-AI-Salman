@@ -10,6 +10,16 @@ type MongoDbIntegrationDependencies = Readonly<{
 
 const mongooseClient: MongoClient = Object.freeze({
   connect: (uri: string): Promise<unknown> => mongoose.connect(uri),
+  assertTransactionsSupported: async (): Promise<void> => {
+    const database = mongoose.connection.db;
+    if (!database) throw new Error("MongoDB connection is not ready for topology checks.");
+    const topology: unknown = await database.admin().command({ hello: 1 });
+    if (typeof topology !== "object" || topology === null
+      || !("setName" in topology && typeof topology.setName === "string")
+        && !("msg" in topology && topology.msg === "isdbgrid")) {
+      throw new Error("MongoDB transactions require a replica set or sharded cluster.");
+    }
+  },
   disconnect: (): Promise<void> => mongoose.disconnect()
 });
 
@@ -31,6 +41,12 @@ export const createMongoDbIntegration = ({
   return Object.freeze({
     connect: async (): Promise<void> => {
       await client.connect(uri);
+      try {
+        await client.assertTransactionsSupported();
+      } catch (error) {
+        await client.disconnect().catch(() => undefined);
+        throw error;
+      }
       logger.info("MongoDB connection established.");
     },
     disconnect: async (): Promise<void> => {

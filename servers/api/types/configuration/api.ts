@@ -7,5 +7,11 @@ export type ApiConfig = Readonly<{
   port: number;
   webOrigin: string;
   mongodbUri?: string;
+  llm?: Readonly<{
+    provider: "groq" | "gemini";
+    model: string;
+    apiKey: string;
+    timeoutMs: number;
+  }>;
   logLevel: LogLevel;
 }>;

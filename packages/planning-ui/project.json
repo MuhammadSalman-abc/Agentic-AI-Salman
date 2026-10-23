@@ -1,0 +1,13 @@
+{
+  "name": "planning-ui",
+  "type": "package",
+  "description": "Reusable planning chat, saved-plan, and feature hierarchy React components.",
+  "internalDependencies": ["eslint-config", "tsconfig", "types", "ui"],
+  "externalDependencies": ["lucide-react", "react"],
+  "capabilities": ["planning-experience", "react-components"],
+  "tasks": {
+    "build": { "command": "pnpm run build", "outputs": ["dist"], "cache": true },
+    "lint": { "command": "pnpm run lint", "cache": false },
+    "typecheck": { "command": "pnpm run typecheck", "cache": false }
+  }
+}

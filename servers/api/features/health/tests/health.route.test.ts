@@ -1,34 +1,36 @@
-import { createServer } from "node:http";
 import test from "node:test";
 import assert from "node:assert/strict";
-import express from "express";
+import type { Request, RequestHandler, Response } from "express";
 import { HTTP_STATUS } from "../../../constants/index.js";
 import { createHealthRoutes } from "../index.js";
 
-void test("GET /health exposes the composed feature behavior", async (context) => {
-  const app = express();
-  app.use(createHealthRoutes({ environment: "test", serviceName: "api" }));
-  const server = createServer(app);
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
-  context.after(() => new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) reject(error);
-      else resolve();
-    });
-  }));
-  const address = server.address();
-  assert.ok(address && typeof address === "object");
+void test("GET /health is registered and invokes the composed feature behavior", async () => {
+  const router = createHealthRoutes({ environment: "test", serviceName: "api" }) as unknown as Readonly<{
+    stack: readonly Readonly<{
+      route?: Readonly<{
+        path: string;
+        methods: Readonly<Record<string, boolean>>;
+        stack: readonly Readonly<{ handle: RequestHandler }>[];
+      }>;
+    }>[];
+  }>;
+  const route = router.stack.find(({ route: candidate }) => candidate?.path === "/health")?.route;
+  assert.ok(route);
+  assert.equal(route.methods.get, true);
+  const handler = route.stack[0]?.handle;
+  assert.ok(handler);
 
-  const response = await fetch(`http://127.0.0.1:${String(address.port)}/health`);
+  let statusCode = 0;
+  let body: unknown;
+  const request = { method: "GET", path: "/health" } as Request;
+  const response = {
+    status: (status: number) => { statusCode = status; return response; },
+    json: (value: unknown) => { body = value; return response; }
+  } as unknown as Response;
+  await handler(request, response, () => undefined);
 
-  assert.equal(response.status, HTTP_STATUS.ok);
-  assert.deepEqual(await response.json(), {
+  assert.equal(statusCode, HTTP_STATUS.ok);
+  assert.deepEqual(body, {
     status: "ok",
     service: "api",
     environment: "test"

@@ -1,18 +1,23 @@
 import type { ReactElement } from "react";
-import { Button } from "@workspace/ui";
+import { ArrowUpRight, HeartPulse, Link2 } from "lucide-react";
+import { Button } from "@workspace/ui/primitives/button";
 
-type ApiBoundaryProps = Readonly<{
-  baseUrl: string;
-}>;
+type ApiBoundaryProps = Readonly<{ baseUrl: string }>;
 
 export const ApiBoundary = ({ baseUrl }: ApiBoundaryProps): ReactElement => (
-  <footer className="mt-auto flex flex-col gap-2 border-t border-border pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-    <span>API boundary</span>
-    <div className="flex flex-wrap items-center gap-3">
-      <code className="w-fit rounded bg-muted px-2 py-1 font-mono text-xs text-foreground">{baseUrl}</code>
-      <Button asChild size="sm" variant="outline">
-        <a href={`${baseUrl}/health`}>API health</a>
-      </Button>
+  <section aria-label="API connection" className="flex flex-col gap-4 rounded-2xl border border-white/80 bg-white/75 p-4 shadow-sm shadow-slate-200/60 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-5">
+    <div className="flex min-w-0 items-center gap-3">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600"><HeartPulse aria-hidden="true" className="size-5" /></span>
+      <div className="min-w-0">
+        <h2 className="font-semibold text-slate-900">API connection</h2>
+        <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+          <Link2 aria-hidden="true" className="size-3 shrink-0" />
+          <code className="truncate font-mono">{baseUrl}</code>
+        </p>
+      </div>
     </div>
-  </footer>
+    <Button asChild className="shrink-0 rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50" size="sm" variant="outline">
+      <a href={`${baseUrl}/health`} rel="noreferrer" target="_blank">Check API health <ArrowUpRight aria-hidden="true" /></a>
+    </Button>
+  </section>
 );

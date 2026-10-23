@@ -2,6 +2,9 @@
   "extends": "@workspace/tsconfig/next.json",
   "compilerOptions": {
     "paths": {
+      "@workspace/types": [
+        "../../packages/types/src/index.ts"
+      ],
       "@/*": [
         "./*"
       ]

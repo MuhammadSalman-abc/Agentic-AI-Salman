@@ -225,6 +225,7 @@
     }
   },
   "moduleBoundaries": [
+    { "project": "planning-ui", "root": "src", "categories": ["components"], "rootExports": ["components"] },
     { "project": "web", "root": "features/workspace-foundation", "categories": ["components"], "rootExports": ["components"] },
     { "project": "web", "root": "types", "categories": ["configuration", "routing"], "rootExports": ["configuration", "routing"] },
     { "project": "api", "root": "integrations", "categories": ["mongodb"], "rootExports": ["mongodb"] },

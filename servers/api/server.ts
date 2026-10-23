@@ -4,7 +4,11 @@ import { createApp, createServer, createShutdown } from "./bootstrap/index.js";
 import { createApiConfig, readApiEnvironment } from "./config/index.js";
 import { apiRuntime } from "./constants/index.js";
 import { createMongoDbIntegration } from "./integrations/index.js";
+import { createLlmProvider } from "./integrations/llm/provider.js";
+import { createPlanningRepository, createPlanningService } from "./features/planning/index.js";
+import dns from "node:dns";
 
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 const config = createApiConfig(readApiEnvironment());
 const logger = createLogger({
   service: apiRuntime.serviceName,
@@ -15,12 +19,19 @@ const database = createMongoDbIntegration({
   logger,
   ...(config.mongodbUri ? { uri: config.mongodbUri } : {})
 });
-const app = createApp({ config, logger });
+const planning = createPlanningService({
+  repository: createPlanningRepository(),
+  ...(config.llm ? { provider: createLlmProvider(config.llm), configuration: config.llm } : {}),
+  persistenceAvailable: Boolean(config.mongodbUri),
+  logger
+});
+const app = createApp({ config, logger, planning });
 const server = createServer({ app, config, logger });
 
 const shutdown = createShutdown({ database, logger, server });
 
 await database.connect();
+if (config.mongodbUri) await planning.resumeQueuedRuns();
 await server.start();
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

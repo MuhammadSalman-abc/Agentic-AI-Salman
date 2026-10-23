@@ -11,5 +11,10 @@ export const readApiEnvironment = (
   API_PORT: source.API_PORT,
   WEB_ORIGIN: source.WEB_ORIGIN,
   MONGODB_URI: source.MONGODB_URI,
+  LLM_PROVIDER: source.LLM_PROVIDER,
+  LLM_MODEL: source.LLM_MODEL,
+  GROQ_API_KEY: source.GROQ_API_KEY,
+  GEMINI_API_KEY: source.GEMINI_API_KEY,
+  LLM_TIMEOUT_MS: source.LLM_TIMEOUT_MS,
   LOG_LEVEL: source.LOG_LEVEL
 });

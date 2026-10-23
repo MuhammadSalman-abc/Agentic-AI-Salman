@@ -1,4 +1,4 @@
 export const application = Object.freeze({
-  name: "Workspace",
-  description: "Production-ready web and API foundation"
+  name: "Agentic AI Planner",
+  description: "Turn software requirements into a structured, reviewable plan"
 });

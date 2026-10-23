@@ -9,5 +9,17 @@ allowBuilds:
   esbuild: true
   unrs-resolver: true
 
+overrides:
+  '@modelcontextprotocol/sdk': 1.32.1
+  sharp: 0.35.5
+  source-map-js: 1.2.2
+
 audit:
   level: high
+  # The braces@3.0.3 backport in patches/braces@3.0.3.patch enforces a 100-level
+  # nesting cap. Remove this exact advisory exception when an upstream fixed release exists.
+  ignore:
+    - GHSA-vfj7-8cjw-p6xm
+
+patchedDependencies:
+  braces@3.0.3: patches/braces@3.0.3.patch

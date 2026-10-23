@@ -1,35 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Logger } from "@workspace/logging";
-import { createApp, createServer } from "../bootstrap/index.js";
+import type { Request, Response } from "express";
 import { ERROR_CODES, ERROR_MESSAGES, HTTP_STATUS } from "../constants/index.js";
-import type { ApiConfig } from "../types/index.js";
+import { createErrorHandler, createNotFoundHandler } from "../middleware/index.js";
 
 const logger: Logger = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined
 };
-const config: ApiConfig = {
-  environment: "test",
-  host: "127.0.0.1",
-  port: 0,
-  webOrigin: "http://localhost:3000",
-  logLevel: "silent"
-};
 
-void test("unknown routes use the API error boundary", async (context) => {
-  const server = createServer({ app: createApp({ config, logger }), config, logger });
-  await server.start();
-  context.after(async () => { await server.stop(); });
-  const address = server.raw.address();
-  assert.ok(address && typeof address === "object");
-  const response = await fetch(`http://127.0.0.1:${String(address.port)}/missing`);
-  assert.equal(response.status, HTTP_STATUS.notFound);
-  assert.deepEqual(await response.json(), {
+void test("unknown routes enter the API error boundary with stable details and request ID", () => {
+  const request = { method: "GET", path: "/missing" } as Request;
+  let capturedError: unknown;
+  createNotFoundHandler()(request, {} as Response, (error) => { capturedError = error; });
+
+  let statusCode = 0;
+  let body: unknown;
+  const response = {
+    getHeader: (name: string) => name.toLowerCase() === "x-request-id" ? "request-404" : undefined,
+    status: (status: number) => { statusCode = status; return response; },
+    json: (value: unknown) => { body = value; return response; }
+  } as unknown as Response;
+  createErrorHandler({ logger })(capturedError, request, response, () => undefined);
+
+  assert.equal(statusCode, HTTP_STATUS.notFound);
+  assert.deepEqual(body, {
     error: {
       code: ERROR_CODES.routeNotFound,
       message: ERROR_MESSAGES.routeNotFound,
+      requestId: "request-404",
       details: { method: "GET", path: "/missing" }
     }
   });

@@ -25,6 +25,10 @@ void test("composes the server-owned MongoDB integration when configured", async
       calls.push(`connect:${uri}`);
       return Promise.resolve();
     },
+    assertTransactionsSupported: (): Promise<void> => {
+      calls.push("assert-transactions-supported");
+      return Promise.resolve();
+    },
     disconnect: (): Promise<void> => {
       calls.push("disconnect");
       return Promise.resolve();
@@ -46,7 +50,29 @@ void test("composes the server-owned MongoDB integration when configured", async
 
   assert.deepEqual(calls, [
     "connect:mongodb://example.test/workspace",
+    "assert-transactions-supported",
     "log:MongoDB connection established.",
     "disconnect"
   ]);
+});
+
+void test("disconnects and rejects a MongoDB deployment without transaction support", async (): Promise<void> => {
+  const calls: string[] = [];
+  const client: MongoClient = {
+    connect: (): Promise<void> => Promise.resolve(),
+    assertTransactionsSupported: (): Promise<void> => Promise.reject(new Error("MongoDB transactions require a replica set or sharded cluster.")),
+    disconnect: (): Promise<void> => {
+      calls.push("disconnect");
+      return Promise.resolve();
+    }
+  };
+  const logger: Logger = {
+    info: (): void => undefined,
+    warn: (): void => undefined,
+    error: (): void => undefined
+  };
+  const integration = createMongoDbIntegration({ uri: "mongodb://example.test/workspace", client, logger });
+
+  await assert.rejects(integration.connect(), /transactions require a replica set or sharded cluster/);
+  assert.deepEqual(calls, ["disconnect"]);
 });

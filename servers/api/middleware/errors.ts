@@ -16,9 +16,16 @@ export const createNotFoundHandler = (): RequestHandler => (request, _response, 
 
 export const createErrorHandler = ({ logger }: { logger: Logger }): ErrorRequestHandler =>
   (error: unknown, _request, response, _next) => {
+    const requestId = response.getHeader("x-request-id");
+    const requestIdField = typeof requestId === "string" ? { requestId } : {};
     if (error instanceof ZodError) {
       const body: ApiErrorResponse = {
-        error: { code: ERROR_CODES.validation, message: ERROR_MESSAGES.validation, details: error.issues }
+        error: {
+          code: ERROR_CODES.validation,
+          message: ERROR_MESSAGES.validation,
+          ...requestIdField,
+          details: error.issues.map(({ code, message, path }) => ({ code, message, path }))
+        }
       };
       response.status(HTTP_STATUS.badRequest).json(body);
       return;
@@ -28,6 +35,7 @@ export const createErrorHandler = ({ logger }: { logger: Logger }): ErrorRequest
         error: {
           code: error.code,
           message: error.message,
+          ...requestIdField,
           ...(error.details ? { details: error.details } : {})
         }
       };
@@ -36,7 +44,7 @@ export const createErrorHandler = ({ logger }: { logger: Logger }): ErrorRequest
     }
     logger.error("Unhandled API error.", { error: error instanceof Error ? error.message : String(error) });
     const body: ApiErrorResponse = {
-      error: { code: ERROR_CODES.internal, message: ERROR_MESSAGES.internal }
+      error: { code: ERROR_CODES.internal, message: ERROR_MESSAGES.internal, ...requestIdField }
     };
     response.status(HTTP_STATUS.internalServerError).json(body);
   };

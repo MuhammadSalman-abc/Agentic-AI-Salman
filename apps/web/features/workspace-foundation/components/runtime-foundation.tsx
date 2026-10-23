@@ -5,26 +5,35 @@ type WorkspaceRuntime = Readonly<{
   label: string;
   detail: string;
   icon: LucideIcon;
+  tone: string;
+  iconTone: string;
 }>;
 
 const runtimes: readonly WorkspaceRuntime[] = [
-  { label: "Web", detail: "Next.js 16 / React 19", icon: Globe2 },
-  { label: "API", detail: "Express 5 / TypeScript", icon: Server },
-  { label: "Data", detail: "Mongoose connection boundary", icon: Database }
+  { label: "Web experience", detail: "Next.js 16 · React 19", icon: Globe2, tone: "from-violet-50 to-white", iconTone: "bg-violet-100 text-violet-700" },
+  { label: "API services", detail: "Express 5 · TypeScript", icon: Server, tone: "from-sky-50 to-white", iconTone: "bg-sky-100 text-sky-700" },
+  { label: "Data layer", detail: "MongoDB · Mongoose", icon: Database, tone: "from-emerald-50 to-white", iconTone: "bg-emerald-100 text-emerald-700" }
 ];
 
 export const RuntimeFoundation = (): ReactElement => (
-  <section aria-labelledby="foundation-heading" className="py-8">
-    <h2 id="foundation-heading" className="text-sm font-semibold text-foreground">Runtime foundation</h2>
-    <div className="mt-4 grid border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-      {runtimes.map(({ label, detail, icon: Icon }) => (
-        <div className="flex min-h-28 items-start gap-3 border-b border-border py-5 last:border-b-0 sm:border-b-0 sm:px-5 sm:first:pl-0" key={label}>
-          <Icon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-          <div>
-            <p className="font-medium text-foreground">{label}</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail}</p>
+  <section aria-labelledby="foundation-heading" className="py-8 sm:py-10">
+    <div className="mb-4 flex items-end justify-between gap-3">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-600">The foundation</p>
+        <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900" id="foundation-heading">Everything working together.</h2>
+      </div>
+      <span className="hidden text-xs font-medium text-slate-500 sm:inline-flex">The stack behind your workspace</span>
+    </div>
+    <div className="grid gap-3 md:grid-cols-3">
+      {runtimes.map(({ label, detail, icon: Icon, tone, iconTone }) => (
+        <article className={`rounded-2xl border border-white bg-gradient-to-br ${tone} p-4 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md sm:p-5`} key={label}>
+          <div className="flex items-start justify-between">
+            <span className={`flex size-10 items-center justify-center rounded-xl ${iconTone}`}><Icon aria-hidden="true" className="size-5" /></span>
+            <span className="mt-1 rounded-full bg-white/80 px-2 py-1 text-[10px] font-medium text-slate-500">{label.startsWith("Web") ? "Frontend" : label.startsWith("API") ? "Backend" : "Storage"}</span>
           </div>
-        </div>
+          <h3 className="mt-4 font-semibold text-slate-900">{label}</h3>
+          <p className="mt-1 text-sm text-slate-500">{detail}</p>
+        </article>
       ))}
     </div>
   </section>

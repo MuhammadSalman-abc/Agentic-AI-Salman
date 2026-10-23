@@ -5,7 +5,7 @@ export const createCorsMiddleware = ({ origin }: { origin: string }): RequestHan
   (request, response, next) => {
     response.setHeader("Access-Control-Allow-Origin", origin);
     response.setHeader("Vary", "Origin");
-    response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Idempotency-Key");
     response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     if (request.method === "OPTIONS") {
       response.sendStatus(HTTP_STATUS.noContent);

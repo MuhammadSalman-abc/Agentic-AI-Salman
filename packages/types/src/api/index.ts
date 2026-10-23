@@ -1,3 +1,34 @@
 export type { ApiEnvironment } from "./environment/index.js";
 export type { ApiErrorCode, ApiErrorDetails, ApiErrorResponse } from "./errors/index.js";
 export type { ApiHealthResponse } from "./health/index.js";
+export type {
+  AcceptProjectVersionResponse,
+  ArchitecturePlan,
+  CancelRunResponse,
+  CompareProjectVersionsResponse,
+  CreateProjectResponse,
+  CreateRunResponse,
+  EditPlanInput,
+  EditProjectVersionResponse,
+  FindSavedRequirementInput,
+  FindSavedRequirementResponse,
+  GeneratePlanInput,
+  GetProjectResponse,
+  GetProjectVersionResponse,
+  GetRunResponse,
+  ListProjectVersionsResponse,
+  ListProjectsResponse,
+  PlanFeature,
+  PlanRequirement,
+  PlanStory,
+  PlanningProject,
+  PlanningRun,
+  PlanningVersion,
+  PlanningVersionComparison,
+  PlanningVersionSummary,
+  PlanTask,
+  ProjectInput,
+  ProjectUpdateInput,
+  UpdateProjectResponse,
+  VersionEntityChanges
+} from "./planning/index.js";
