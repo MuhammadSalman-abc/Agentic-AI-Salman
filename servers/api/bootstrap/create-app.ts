@@ -5,7 +5,7 @@ import { apiRuntime } from "../constants/index.js";
 import { createHealthRoutes } from "../features/health/index.js";
 import { createPlanningRoutes } from "../features/planning/index.js";
 import type { PlanningHttpService } from "../features/planning/index.js";
-import { createCorsMiddleware, createErrorHandler, createNotFoundHandler, createRequestIdMiddleware } from "../middleware/index.js";
+import { createCorsMiddleware, createErrorHandler, createNotFoundHandler, createRequestIdMiddleware, createApiRateLimiters } from "../middleware/index.js";
 
 type AppDependencies = Readonly<{ config: ApiConfig; logger: Logger; planning?: PlanningHttpService }>;
 
@@ -18,6 +18,7 @@ export const createApp = ({ config, logger, planning }: AppDependencies): Expres
     format: config.environment === "production" ? "combined" : "dev"
   }));
   app.use(createCorsMiddleware({ origin: config.webOrigin }));
+  for (const limiter of createApiRateLimiters(config.rateLimits)) app.use(limiter);
   app.use(express.json({ limit: apiRuntime.jsonBodyLimit }));
   const featureRouters = [createHealthRoutes({
     environment: config.environment,

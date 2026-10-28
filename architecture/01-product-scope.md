@@ -43,14 +43,14 @@ Stories, or Tasks.
 
 - Single-user projects and saved project context.
 - Text requirements and optional generation instructions.
-- Requirement analysis, Feature/Story planning, Task decomposition, and deterministic
-  whole-plan validation.
-- Instruct the AI to create three to ten Features and reject generation output above ten.
+- One-call requirement analysis and complete Feature/Story/Task generation, followed by
+  deterministic whole-plan validation.
+- Instruct the AI to create three to ten Features and reject output outside that range.
   The UI displays up to ten and keeps older saved plans readable.
 - One parent Feature per Story and one parent Story per Task.
 - Development and testing Task types, acceptance/completion criteria, priorities, and Task
   dependencies.
-- Persisted run status, cancellation, bounded retry, immutable plan versions, edit, accept,
+- Persisted run status, cancellation, one-provider-call generation, immutable plan versions, edit, accept,
   compare, and regeneration.
 - User-controlled review; no automatic acceptance or Task execution.
 

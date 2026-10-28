@@ -1,4 +1,6 @@
 @import "@workspace/ui/styles.css";
+@import "../features/planning-chat/studio.css";
+@import "./theme.css";
 
 @source "../**/*.{ts,tsx}";
 @source "../../../packages/ui/src/**/*.{ts,tsx}";

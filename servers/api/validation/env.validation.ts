@@ -12,6 +12,10 @@ export const apiEnvironmentSchema = z.object({
   GROQ_API_KEY: z.string().min(1).optional(),
   GEMINI_API_KEY: z.string().min(1).optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(180_000).optional(),
+  GENERATION_CONCURRENCY: z.coerce.number().int().min(1).max(8).optional(),
+  GENERATION_MAX_QUEUED: z.coerce.number().int().min(0).max(100).optional(),
+  API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(100_000).optional(),
+  GENERATION_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(1_000).optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
 }).superRefine((environment, context) => {
   if (!environment.LLM_PROVIDER) return;

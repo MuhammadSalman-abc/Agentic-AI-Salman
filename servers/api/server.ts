@@ -23,12 +23,13 @@ const planning = createPlanningService({
   repository: createPlanningRepository(),
   ...(config.llm ? { provider: createLlmProvider(config.llm), configuration: config.llm } : {}),
   persistenceAvailable: Boolean(config.mongodbUri),
+  ...(config.generationQueue ? { queueLimits: config.generationQueue } : {}),
   logger
 });
 const app = createApp({ config, logger, planning });
 const server = createServer({ app, config, logger });
 
-const shutdown = createShutdown({ database, logger, server });
+const shutdown = createShutdown({ database, logger, server, stopGeneration: planning.stopGeneration });
 
 await database.connect();
 if (config.mongodbUri) await planning.resumeQueuedRuns();

@@ -46,7 +46,7 @@ HTTP route -> controller -> planning service -> validator
 - **Controller:** parses HTTP inputs, calls application operations, validates response
   envelopes, and maps status codes.
 - **Planning service:** owns project/run/version use cases and coordinates the pipeline.
-- **Planning validation:** owns stage schemas, full-plan invariants, coverage checks,
+- **Planning validation:** owns the complete-plan schema, plan invariants, coverage checks,
   technical payload/entity-size safety limits, and deterministic dependency ordering. New
   generated plans may contain at most ten Features.
 - **Web plan projection:** displays at most the first ten Features in stored order and only
@@ -54,7 +54,7 @@ HTTP route -> controller -> planning service -> validator
 - **Planning repository:** feature-owned persistence contract consumed by the service.
 - **MongoDB adapter:** owns Mongoose models, indexes, queries, transactions, and connection
   mechanics. Feature services do not import Mongoose.
-- **LLM provider contract:** accepts a stage request and returns untrusted JSON.
+- **LLM provider contract:** accepts the complete-plan request and returns untrusted JSON.
 - **LLM adapter:** owns Groq/Gemini HTTP/SDK details, timeout, response parsing, and safe
   error normalization.
 - **Bootstrap:** constructs dependencies and registers features. It does not own planning

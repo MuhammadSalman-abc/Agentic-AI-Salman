@@ -13,5 +13,7 @@ export const ERROR_CODES = Object.freeze({
   persistenceUnavailable: "persistence_unavailable",
   idempotencyConflict: "idempotency_conflict",
   versionConflict: "version_conflict",
-  runCancelled: "run_cancelled"
+  runCancelled: "run_cancelled",
+  generationActive: "generation_active",
+  generationQueueFull: "generation_queue_full"
 } as const satisfies Readonly<Record<string, ApiErrorCode>>);

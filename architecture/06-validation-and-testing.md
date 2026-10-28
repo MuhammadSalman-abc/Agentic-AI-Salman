@@ -9,13 +9,20 @@
 - Validate identifiers, required idempotency header, request limits, and enum values.
 - Do not create a run when required persistence/provider configuration is absent.
 
-### Stage gate
+### Provider and plan gate
 
-- Parse every provider response from `unknown` against that stage's strict schema.
+- Parse the single complete-plan provider response from `unknown` against the strict plan schema.
 - Reject extra fields, invalid enum values, duplicate/missing requirement coverage, and
   technical safety-limit violations. Generated planner output must contain three to ten
-  Features; output above ten is corrected within the retry limit, then rejected.
-- Keep retry counts finite and stage-specific. Retry only transient or correctable errors.
+  Features; output outside that range is rejected without another provider call.
+- Make exactly one provider call per new generation run. Provider, output-schema, and
+  deterministic validation failures end the run; a user must start a new run to try again.
+- When the provider omits the entire Tasks array or leaves a Story without an implementation
+  or testing Task, create the missing Task type locally before whole-plan validation. Generated
+  testing Tasks cover positive, negative, and edge cases. Malformed non-array `tasks` values
+  remain invalid.
+- Normalize recognized priority labels and default unknown or missing priorities to `medium`
+  before schema validation.
 
 ### Whole-plan gate
 
@@ -35,13 +42,13 @@ result means structurally valid and traceable; it does not prove business correc
 
 | Level | Required coverage | Boundary strategy |
 |---|---|---|
-| Unit | schemas, Feature prompt guidance, first-five UI projection, technical size ceilings, coverage, relationships, topological sort, comparison diff, retry classification, provider response parsing | deterministic inputs; no network |
-| Service | stage order, prompt inputs, bounded attempts, cancellation checks, missing provider, safe error mapping, idempotency outcomes | fake repository/provider with assertions |
+| Unit | plan schema, Feature prompt guidance, one-call behavior, technical size ceilings, coverage, relationships, topological sort, comparison diff, provider response parsing | deterministic inputs; no network |
+| Service | single-call input/prompt, terminal provider/schema failures, cancellation checks, missing provider, safe error mapping, idempotency outcomes | fake repository/provider with assertions |
 | Controller/contract | request validation, status/envelope, required idempotency header, stable error code/request ID, no sensitive-value echo | invoke controller with service fake |
 | Route integration | actual Express routing, middleware order, unknown route and JSON boundary | local test app; no external network |
 | Mongo integration | indexes, duplicate keys, claim concurrency, cancellation race, transaction rollback, version conflict, restart recovery | isolated replica-set MongoDB |
 | Provider contract | Groq/Gemini request shape, timeout, HTTP errors, malformed JSON, rate limit/auth classification | mocked fetch for deterministic suite |
-| Live provider smoke | one bounded structured-output call per configured provider/model | explicit opt-in; never require credentials in ordinary CI |
+| Live provider smoke | one bounded JSON-generation call per configured provider/model | explicit opt-in; never require credentials in ordinary CI |
 | End-to-end | requirement submit → run progress → saved version → expand Feature/Story hierarchy → edit/accept/compare/regenerate | real API and replica-set DB; provider fake or controlled test provider |
 
 Do not label mocked controller tests as database/provider integration tests. Record test
@@ -52,7 +59,7 @@ environment and whether the boundary was live or faked.
 Backend is ready for the UI phase when all are true:
 
 1. API typecheck, lint, and the repository-owned API test suite pass.
-2. Stage schemas and whole-plan rule tests cover valid and invalid edge cases, including six
+2. Complete-plan schema and whole-plan rule tests cover valid and invalid edge cases, including six
    and seven Features saved intact, the UI projection showing five without mutating the saved
    plan, technical safety-ceiling overflow, missing child entities, duplicate IDs, missing
    coverage, dependency cycles, and deterministic ordering.
@@ -69,6 +76,12 @@ If credentials or replica-set infrastructure are unavailable, report those gates
 unverified and keep UI work from being described as backend-stable.
 
 ## 6.4 Repository validation commands
+
+Bounded API rate-limit handling, concurrency and stress evidence is recorded in
+[the load-testing assessment](qa-load-testing.md). Run it explicitly with
+`pnpm --dir servers/api run test:load`; it uses a fake provider and an isolated real
+MongoDB database. Passing it does not establish provider quota capacity or horizontal
+scalability. The assessment lists admission-control and worker-ownership gaps.
 
 Use the repository control plane and package scripts, not ad hoc test runners as the only
 evidence. The exact API tasks are discoverable with `pnpm run tasks` and

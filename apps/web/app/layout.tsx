@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { application } from "@/constants/application";
 import type { RootLayoutProps } from "@/types";
+import { ThemeProvider } from "@workspace/ui";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,8 +11,8 @@ export const metadata: Metadata = {
 };
 
 const RootLayout = ({ children }: RootLayoutProps): ReactElement => (
-  <html lang="en">
-    <body>{children}</body>
+  <html lang="en" suppressHydrationWarning>
+    <body><ThemeProvider>{children}</ThemeProvider></body>
   </html>
 );
 

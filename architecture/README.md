@@ -1,6 +1,6 @@
 # Agentic AI Architecture Set
 
-**Current revision:** 1.2  
+**Current revision:** 1.3
 **Status:** Design baseline for backend hardening  
 **Product:** Chat-based software requirements-to-plan assistant
 
@@ -33,8 +33,9 @@ generation sequence.
 
 ## Decisions fixed for this revision
 
-- One central orchestrator coordinates bounded, sequential AI stages.
-- Instruct the AI to create three to ten Features and reject generated output above ten. The
+- One central orchestrator makes one provider call for the complete plan, then runs
+  deterministic validation. Invalid output fails without an automatic correction call.
+- Instruct the AI to create three to ten Features and reject output outside that range. The
   UI renders up to ten Features and their Stories/Tasks; older saved versions remain readable.
 - The plan is navigated as Feature → Story → Task. Selecting a Feature reveals its Stories;
   selecting a Story reveals its Tasks.

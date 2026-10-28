@@ -14,4 +14,6 @@ export type ApiConfig = Readonly<{
     timeoutMs: number;
   }>;
   logLevel: LogLevel;
+  generationQueue?: Readonly<{ concurrency: number; maxQueued: number }>;
+  rateLimits?: Readonly<{ windowMs: number; requests: number; generations: number }>;
 }>;

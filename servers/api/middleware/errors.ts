@@ -31,6 +31,7 @@ export const createErrorHandler = ({ logger }: { logger: Logger }): ErrorRequest
       return;
     }
     if (isApplicationError(error)) {
+      if (error.code === ERROR_CODES.generationQueueFull) response.setHeader("Retry-After", "5");
       const body: ApiErrorResponse = {
         error: {
           code: error.code,

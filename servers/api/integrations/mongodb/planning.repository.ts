@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Types, startSession } from "mongoose";
-import type { ArchitecturePlan } from "@workspace/types";
+import type { ArchitecturePlan, PlanningRun, PlanningTokenUsage } from "@workspace/types";
 import { ArchitectureVersionModel, GenerationRunModel, ProjectModel, type VersionInputSnapshot } from "./planning.models.js";
 
 type WorkerRun = Readonly<{
@@ -20,13 +20,14 @@ const toProject = (record: { _id: Types.ObjectId; name: string; context: string;
 type RunViewRecord = Readonly<{
   _id: Types.ObjectId;
   projectId: Types.ObjectId;
-  status: string;
+  status: PlanningRun["status"];
   stage: string | null;
   attempts: number;
   resultVersion: number | null;
   error: { code: string; message: string } | null;
   createdAt: Date;
   finishedAt: Date | null;
+  usage?: PlanningTokenUsage | null;
 }>;
 
 type VersionViewRecord = Readonly<{
@@ -38,11 +39,12 @@ type VersionViewRecord = Readonly<{
   runId: Types.ObjectId | null;
   inputSnapshot: VersionInputSnapshot | null;
   plan: ArchitecturePlan;
+  usage?: PlanningTokenUsage | null;
   validation: { passed: boolean; checks: string[]; warnings: string[] };
   createdAt: Date;
 }>;
 
-const toRun = (record: RunViewRecord) => ({
+const toRun = (record: RunViewRecord): PlanningRun => ({
   id: record._id.toString(), projectId: record.projectId.toString(), status: record.status,
   stage: typeof record.stage === "string" ? record.stage : null,
   attempts: record.attempts, resultVersion: typeof record.resultVersion === "number" ? record.resultVersion : null,
@@ -50,13 +52,14 @@ const toRun = (record: RunViewRecord) => ({
     ? { code: record.error.code, message: record.error.message }
     : null,
   createdAt: record.createdAt instanceof Date ? record.createdAt.toISOString() : new Date().toISOString(),
-  finishedAt: record.finishedAt instanceof Date ? record.finishedAt.toISOString() : null
+  finishedAt: record.finishedAt instanceof Date ? record.finishedAt.toISOString() : null,
+  usage: record.usage ?? null
 });
 
 const toVersion = (record: VersionViewRecord) => ({
   projectId: record.projectId.toString(), version: record.version, basedOnVersion: record.basedOnVersion,
   source: record.source, schemaVersion: 1 as const, runId: record.runId?.toString() ?? null,
-  inputSnapshot: record.inputSnapshot, plan: record.plan, validation: record.validation,
+  inputSnapshot: record.inputSnapshot, plan: record.plan, validation: record.validation, usage: record.usage ?? null,
   requirementSummary: record.inputSnapshot?.requirement ?? null,
   createdAt: record.createdAt.toISOString()
 });
@@ -105,6 +108,7 @@ export const createPlanningRepository = () => ({
     projectId: string; requirement: string; instructions: string; idempotencyKey: string;
     provider: string; model: string; promptVersion: string;
   }) => {
+    await GenerationRunModel.init();
     const projectObjectId = new Types.ObjectId(input.projectId);
     const requestFingerprint = fingerprint({ requirement: input.requirement, instructions: input.instructions });
     const existing = await GenerationRunModel.findOne({ projectId: projectObjectId, idempotencyKey: input.idempotencyKey }).lean().exec();
@@ -114,9 +118,13 @@ export const createPlanningRepository = () => ({
     }
     const project = await ProjectModel.findById(projectObjectId).lean().exec();
     if (!project) return { missingProject: true as const };
+    const activeRun = await GenerationRunModel.findOne({ projectId: projectObjectId, status: { $nin: ["succeeded", "failed", "cancelled"] } }).lean().exec();
+    if (activeRun) return activeRun.requestFingerprint === requestFingerprint && activeRun.contextSnapshot === project.context
+      ? { conflict: false as const, created: false, run: toRun(activeRun) }
+      : { activeConflict: true as const };
     try {
       const run = await GenerationRunModel.create({
-        projectId: projectObjectId, status: "queued", stage: null, requirement: input.requirement,
+        projectId: projectObjectId, active: true, status: "queued", stage: null, requirement: input.requirement,
         instructions: input.instructions, contextSnapshot: project.context, baseVersion: project.currentVersion,
         provider: input.provider, model: input.model, promptVersion: input.promptVersion,
         attempts: 0, stageAttempts: {}, idempotencyKey: input.idempotencyKey, requestFingerprint,
@@ -128,6 +136,12 @@ export const createPlanningRepository = () => ({
         const duplicate = await GenerationRunModel.findOne({ projectId: projectObjectId, idempotencyKey: input.idempotencyKey }).lean().exec();
         if (duplicate?.requestFingerprint === requestFingerprint) {
           return { conflict: false as const, created: false, run: toRun(duplicate) };
+        }
+        if (!duplicate) {
+          const competing = await GenerationRunModel.findOne({ projectId: projectObjectId, active: true }).lean().exec();
+          if (competing) return competing.requestFingerprint === requestFingerprint && competing.contextSnapshot === project.context
+            ? { conflict: false as const, created: false, run: toRun(competing) }
+            : { activeConflict: true as const };
         }
         return { conflict: true as const };
       }
@@ -150,7 +164,7 @@ export const createPlanningRepository = () => ({
     const now = new Date();
     const updated = await GenerationRunModel.findOneAndUpdate(
       { _id: runId, status: { $in: ["queued", "analyzing", "planning", "decomposing", "grooming", "validating"] } },
-      { $set: { status: "cancelled", error: { code: "RUN_CANCELLED", message: "Generation was cancelled by the user.", retryable: false }, finishedAt: now } },
+      { $set: { active: false, status: "cancelled", error: { code: "RUN_CANCELLED", message: "Generation was cancelled by the user.", retryable: false }, finishedAt: now } },
       { returnDocument: "after" }
     ).lean().exec();
     if (updated) return { kind: "cancelled" as const, run: toRun(updated) };
@@ -323,7 +337,7 @@ export const createPlanningRepository = () => ({
     if (!Types.ObjectId.isValid(runId)) return null;
     const claimed = await GenerationRunModel.findOneAndUpdate(
       { _id: runId, status: "queued" },
-      { $set: { status: "analyzing", stage: "analyzing", startedAt: new Date() } },
+      { $set: { status: "planning", stage: "planning", startedAt: new Date() } },
       { returnDocument: "after" }
     ).lean().exec();
     return claimed ? { id: claimed._id.toString(), projectId: claimed.projectId.toString() } : null;
@@ -343,9 +357,13 @@ export const createPlanningRepository = () => ({
     { $set: { stage, status: stage, [`stageAttempts.${stage}`]: attempt }, $inc: { attempts: 1 } }
   ).exec(),
 
+  recordUsage: async (runId: string, usage: PlanningTokenUsage) => GenerationRunModel.updateOne(
+    { _id: runId }, { $set: { usage } }
+  ).exec(),
+
   failRun: async (runId: string, code: string, message: string, retryable: boolean) => GenerationRunModel.updateOne(
     { _id: runId, status: { $nin: ["succeeded", "cancelled"] } },
-    { $set: { status: "failed", error: { code, message, retryable }, finishedAt: new Date() } }
+    { $set: { active: false, status: "failed", error: { code, message, retryable }, finishedAt: new Date() } }
   ).exec(),
 
   savePlan: async (runId: string, projectId: string, baseVersion: number | null, plan: ArchitecturePlan): Promise<number | null> => {
@@ -363,12 +381,12 @@ export const createPlanningRepository = () => ({
         const version = (project.currentVersion ?? 0) + 1;
         await ArchitectureVersionModel.create([{
           projectId: projectObjectId, version, basedOnVersion: baseVersion, source: "generation", schemaVersion: 1,
-          runId: runObjectId, inputSnapshot: { requirement: run.requirement, context: run.contextSnapshot, instructions: run.instructions }, plan,
+          runId: runObjectId, inputSnapshot: { requirement: run.requirement, context: run.contextSnapshot, instructions: run.instructions }, plan, usage: run.usage ?? null,
           validation: { passed: true, checks: ["schema", "coverage", "relationships", "dependency-graph", "task-order"], warnings: [] }
         }], { session });
         const update = await GenerationRunModel.updateOne(
           { _id: runObjectId, status: { $nin: ["cancelled", "failed"] } },
-          { $set: { status: "succeeded", stage: null, resultVersion: version, error: null, finishedAt: new Date() } },
+          { $set: { active: false, status: "succeeded", stage: null, resultVersion: version, error: null, finishedAt: new Date() } },
           { session }
         ).exec();
         if (update.modifiedCount !== 1) throw new Error("RUN_CANCELLED");
@@ -384,7 +402,7 @@ export const createPlanningRepository = () => ({
 
   markActiveRunsInterrupted: async () => GenerationRunModel.updateMany(
     { status: { $in: ["analyzing", "planning", "decomposing", "grooming", "validating"] } },
-    { $set: { status: "failed", error: { code: "RUN_INTERRUPTED", message: "The API restarted while this run was active.", retryable: true }, finishedAt: new Date() } }
+    { $set: { active: false, status: "failed", error: { code: "RUN_INTERRUPTED", message: "The API restarted while this run was active.", retryable: true }, finishedAt: new Date() } }
   ).exec(),
 
   listQueuedRuns: async () => (await GenerationRunModel.find({ status: "queued" }).select({ _id: 1 }).lean().exec()).map(({ _id }) => _id.toString()),

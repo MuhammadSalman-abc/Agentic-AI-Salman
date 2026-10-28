@@ -14,6 +14,8 @@ export const createApiConfig = (environment: ValidatedApiEnvironment): ApiConfig
     port: environment.API_PORT,
     webOrigin: environment.WEB_ORIGIN,
     logLevel: environment.LOG_LEVEL,
+    generationQueue: { concurrency: environment.GENERATION_CONCURRENCY ?? 1, maxQueued: environment.GENERATION_MAX_QUEUED ?? 20 },
+    rateLimits: { windowMs: 60_000, requests: environment.API_RATE_LIMIT_PER_MINUTE ?? 600, generations: environment.GENERATION_RATE_LIMIT_PER_MINUTE ?? 10 },
     ...(llm ? { llm } : {}),
     ...(environment.MONGODB_URI ? { mongodbUri: environment.MONGODB_URI } : {})
   });

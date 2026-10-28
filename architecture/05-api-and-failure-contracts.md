@@ -52,11 +52,11 @@ must be documented and contract-tested.
 | Invalid project ID/body | 400; no run or version created |
 | Missing project/run/version | 404 with stable code |
 | Provider not configured | 503 before run creation |
-| Provider timeout/network/5xx | bounded retry; then failed run; no version |
-| Provider auth/unsupported model | fail without retry loop; safe operator code |
-| Invalid stage JSON/schema | bounded correction retry; then failed run |
+| Provider timeout/network/5xx | fail the run after the single provider call; no version |
+| Provider auth/unsupported model | fail after the single provider call; safe operator code |
+| Invalid complete-plan JSON/schema | fail after the single provider call; no version |
 | Newly generated plan has 3–10 Features | validate and save as a version when all other checks pass |
-| Generated plan exceeds 10 Features | bounded correction retry, then fail validation without saving a version |
+| Generated plan has fewer than 3 or more than 10 Features | fail validation without saving a version or making another provider call |
 | Feature count exceeds technical safety ceiling | validation failure; no successful version |
 | Invalid parent/dependency/cycle/coverage | hard validation failure; no saved version |
 | Cancellation wins before commit | cancelled run; no version |

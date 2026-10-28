@@ -5,3 +5,5 @@ export { PlanResult } from "./plan-result.js";
 export type { PlanResultProps } from "./plan-result.js";
 export { SavedPlans } from "./saved-plans.js";
 export type { SavedPlansProps } from "./saved-plans.js";
+export { PlanUsage } from "./plan-usage.js";
+export type { PlanUsageProps } from "./plan-usage.js";

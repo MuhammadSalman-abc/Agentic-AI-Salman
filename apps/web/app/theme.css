@@ -1,0 +1,25 @@
+/* Existing product surfaces share the same persisted light/dark preference. */
+html.dark { color-scheme: dark; }
+html.dark body, html.dark main { background-color: #0c1120; color: #e2e8f0; }
+html.dark .planning-studio { background: #0c1120; }
+html.dark body :is(.bg-white, [class*="bg-white/"], [role="dialog"]) { background-color: #141c2f; }
+html.dark body :is(.bg-slate-50, .bg-slate-100, [class*="bg-slate-50/"], [class*="bg-slate-100/"], [class*="bg-slate-200/"]) { background-color: #1c273d; }
+html.dark body :is([class*="from-violet-50"], [class*="from-white"], [class*="from-slate-50"]) { background-image: none; background-color: #141c2f; }
+html.dark body :is(.bg-violet-50, .bg-indigo-50, .bg-purple-50) { background-color: #292243; }
+html.dark body :is(.bg-sky-50, .bg-blue-50) { background-color: #142d40; }
+html.dark body :is(.bg-emerald-50, .bg-green-50) { background-color: #11382e; }
+html.dark body :is(.bg-amber-50, .bg-yellow-50) { background-color: #392d19; }
+html.dark body .bg-rose-50 { background-color: #3b1b2c; }
+html.dark body :is(.text-slate-950, .text-slate-900, .text-slate-800) { color: #edf2ff; }
+html.dark body :is(.text-slate-700, .text-slate-600) { color: #c2cce0; }
+html.dark body :is(.text-slate-500, .text-slate-400) { color: #9aaac4; }
+html.dark body :is(.text-violet-600, .text-violet-700, .text-violet-800, .text-indigo-700) { color: #bca4ff; }
+html.dark body :is(.text-sky-700, .text-sky-800) { color: #7dd3fc; }
+html.dark body :is(.text-emerald-700, .text-emerald-800) { color: #6ee7b7; }
+html.dark body :is(.text-amber-700, .text-amber-800) { color: #fcd34d; }
+html.dark body .text-rose-700 { color: #fda4af; }
+html.dark body :is([class*="border-slate-"], [class*="border-indigo-"], [class*="border-violet-"]) { border-color: #303c54; }
+html.dark .studio-gradient-text { color: #bca4ff; }
+html.dark .studio-welcome-mascot::before { background: radial-gradient(circle, #30214c, transparent 72%); border-color: #49366a; }
+html.dark .studio-starter:hover { background-color: #202a43; border-color: #8061bf; }
+html.dark .planning-chat-scroll { scrollbar-color: #70609e transparent; }

@@ -23,6 +23,7 @@ export type {
   PlanStory,
   PlanningProject,
   PlanningRun,
+  PlanningTokenUsage,
   PlanningVersion,
   PlanningVersionComparison,
   PlanningVersionSummary,

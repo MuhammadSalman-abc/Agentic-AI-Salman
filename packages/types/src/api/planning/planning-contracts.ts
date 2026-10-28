@@ -29,7 +29,9 @@ export type PlanTask = Readonly<{
   storyId: string;
   title: string;
   description: string;
-  taskType: "technical_development" | "testing";
+  taskType: "technical_development" | "testing" | "design" | "infrastructure" | "documentation";
+  acceptanceCriteriaIndexes?: readonly number[] | undefined;
+  layer?: "backend" | "frontend" | "data" | "integration" | "testing" | "design" | "infrastructure" | "documentation" | undefined;
   completionCriteria: readonly string[];
   priority: "low" | "medium" | "high" | "critical";
   dependsOn: readonly string[];
@@ -43,6 +45,7 @@ export type ArchitecturePlan = Readonly<{
     constraints: readonly string[];
     assumptions: readonly string[];
     openQuestions: readonly string[];
+    outOfScope?: readonly string[] | undefined;
   }>;
   features: readonly PlanFeature[];
   stories: readonly PlanStory[];
@@ -57,6 +60,12 @@ export type PlanningProject = Readonly<{
   acceptedVersion: number | null;
 }>;
 
+export type PlanningTokenUsage = Readonly<{
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+}>;
+
 export type PlanningRun = Readonly<{
   id: string;
   projectId: string;
@@ -67,6 +76,7 @@ export type PlanningRun = Readonly<{
   error: Readonly<{ code: string; message: string }> | null;
   createdAt: string;
   finishedAt: string | null;
+  usage?: PlanningTokenUsage | null | undefined;
 }>;
 
 export type PlanningVersionSummary = Readonly<{
@@ -84,6 +94,7 @@ export type PlanningVersionSummary = Readonly<{
 export type PlanningVersion = PlanningVersionSummary & Readonly<{
   inputSnapshot: Readonly<{ requirement: string; context: string; instructions: string }> | null;
   plan: ArchitecturePlan;
+  usage?: PlanningTokenUsage | null | undefined;
 }>;
 
 export type VersionEntityChanges = Readonly<{

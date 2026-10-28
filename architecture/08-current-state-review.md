@@ -11,7 +11,7 @@ inventory on 20 October 2026. Validation evidence and environment limits are rec
 | Project/run/version operations | Service and routes expose project CRUD, run creation/status/cancel, versions, edits, acceptance, and comparison. |
 | LLM provider seam | `servers/api/integrations/llm/provider.ts` adapts Groq and Gemini with timeout and normalized errors. |
 | Mongo persistence | `servers/api/integrations/mongodb/planning.models.ts` and `planning.repository.ts` define project, run, version records, indexes, run claims, and transactional writes. |
-| Orchestration | `planning.service.ts` runs analyst → planner → decomposer → deterministic whole-plan validation. |
+| Orchestration | `planning.service.ts` makes one complete-plan provider call, then runs deterministic whole-plan validation. |
 | Recovery hooks | Server startup calls `resumeQueuedRuns`, which marks active runs interrupted and starts queued runs. |
 | API contract tests | `planning.api.test.ts` tests controller contracts and route registration with fakes. |
 
@@ -26,10 +26,9 @@ inventory on 20 October 2026. Validation evidence and environment limits are rec
 3. **Mongo repository boundary tests now run against Atlas.** They cover unique indexes,
    concurrent claims and idempotency, atomic commits, concurrent stale edits, cancellation
    racing commit, rollback, and restart recovery (evidence below).
-4. **Orchestration retry/cancellation edge cases are covered with a fake provider.** Tests prove
-   stage order, transient retry, schema-correction feedback, bounded retry exhaustion,
-   non-retryable provider errors, and cancellation before or between provider stages without
-   persisting a version.
+4. **Single-call orchestration and cancellation cases are covered with a fake provider.** Tests
+   prove one complete-plan call per run, terminal provider/schema/rate-limit failures, and
+   cancellation before or after the call without persisting a version.
 5. **Transaction topology is checked at startup.** The MongoDB integration issues `hello` and
    accepts replica-set (`setName`) or sharded (`isdbgrid`) topologies; unsupported configured
    deployments are disconnected and fail startup with a clear error. Atlas returned a writable
@@ -64,9 +63,8 @@ work, not a greenfield rewrite.
 - The HTTP end-to-end test used the real Express API, a deterministic fake LLM provider, and
   Atlas. It created a project with empty context, submitted a requirement, waited for generation,
   and retrieved the complete saved version over HTTP. Its temporary database was dropped.
-- Fake-provider service tests cover transient retries, validation repair, terminal provider
-  errors, retry exhaustion, stage order, and cancellation before/between stages; no cancelled
-  or exhausted-failure scenario saved a plan.
+- Fake-provider service tests cover one-call generation, terminal validation/provider/rate-limit
+  failures, and cancellation before/after the call; no cancelled or failed scenario saved a plan.
 - API TypeScript check, focused ESLint, and `pnpm run check`: passed.
 - The live run exposed and fixed Mongoose required-string validation for empty `context` and
   `contextSnapshot`, both of which are allowed to be empty by the API contract.
@@ -74,6 +72,15 @@ work, not a greenfield rewrite.
 ## 8.5 Review outcome
 
 The backend API-to-database journey, MongoDB transaction/recovery gates, and the core
-orchestration retry/cancellation failure paths passed in this environment. Remaining checks
+single-call orchestration/cancellation failure paths passed in this environment. Remaining checks
 before calling the whole product stable are the UI's first-five Feature projection and optional
 live provider smoke testing with configured credentials.
+
+## 8.6 One-call generation update — 27 October 2026
+
+- New runs now make one complete-plan provider call instead of separate analyst, planner, and
+  decomposer calls. Validation and atomic persistence still run after the response.
+- Focused generation service tests: **7/7 passed**. API typecheck and targeted ESLint passed.
+- Full API suite: **28 passed, 2 MongoDB integration tests failed before exercising the new
+  flow** because Atlas SRV DNS lookup timed out (`querySrv ETIMEOUT`). Live Mongo integration
+  therefore remains unverified in this run.

@@ -13,6 +13,7 @@ void test("graceful shutdown stops HTTP traffic before disconnecting persistence
   const shutdown = createShutdown({
     logger,
     server: { stop: (): Promise<void> => { calls.push("server:stop"); return Promise.resolve(); } },
+    stopGeneration: (): Promise<void> => { calls.push("generation:drain"); return Promise.resolve(); },
     database: { disconnect: (): Promise<void> => { calls.push("database:disconnect"); return Promise.resolve(); } }
   });
 
@@ -21,6 +22,7 @@ void test("graceful shutdown stops HTTP traffic before disconnecting persistence
   assert.deepEqual(calls, [
     "API shutdown requested.:SIGTERM",
     "server:stop",
+    "generation:drain",
     "database:disconnect"
   ]);
 });

@@ -15,7 +15,7 @@ flowchart LR
   Express[Express API]
   Route[Planning route]
   Controller[Planning controller]
-  Service[Planning service and stage orchestration]
+  Service[Planning service and generation orchestration]
   Validation[Planning Zod schemas and graph rules]
   MongoRepo[MongoDB repository adapter]
   Mongo[(MongoDB)]
@@ -67,12 +67,9 @@ sequenceDiagram
     API-->>Hook: 202 Accepted with run ID
     par Background generation in API process
       API->>DB: Claim queued run
-      loop Bounded stage calls
-        API->>AI: Stage request (analyst, planner, decomposer)
-        AI-->>API: Untrusted model JSON
-        API->>API: Parse stage schema and check output
-      end
-      API->>API: Validate full plan and task dependency order
+      API->>AI: One complete-plan request
+      AI-->>API: Untrusted complete-plan JSON
+      API->>API: Parse schema; validate coverage, links, limits and task order
       API->>DB: Transactionally append version and mark run succeeded
     and Web observes run
       loop Poll until terminal run status
@@ -95,16 +92,14 @@ request.
 ```mermaid
 flowchart TD
   Input[Requirement + project context + optional refinement]
-  Analyst[Requirement Analyst]
-  Planner[Feature and Story Planner]
-  Decomposer[Task Decomposer]
+  Planner[Single-call complete-plan generation]
   Validate[Deterministic whole-plan validation]
   Persist[MongoDB transaction: immutable version + successful run]
   Fail[Store safe failure status; no version commit]
 
-  Input --> Analyst --> Planner --> Decomposer --> Validate
+  Input --> Planner --> Validate
   Validate -->|schemas, coverage, links, limits, dependency DAG pass| Persist
-  Validate -->|invalid after bounded correction attempts| Fail
+  Validate -->|invalid on this attempt| Fail
 ```
 
 All generated provider content starts as untrusted data. The validator owns the final

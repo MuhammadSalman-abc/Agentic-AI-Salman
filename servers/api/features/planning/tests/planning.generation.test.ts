@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Logger } from "@workspace/logging";
-import type { PlanningRun } from "@workspace/types";
+import type { PlanningRun, PlanningTokenUsage } from "@workspace/types";
 import { createPlanningService } from "../planning.service.js";
 import { validateAndOrderPlan } from "../planning.validation.js";
+import { completeMissingTestCoverage } from "../planning-test-coverage.js";
 import { LlmProviderError, type LlmGenerationRequest, type LlmProvider } from "../../../integrations/llm/provider.js";
 
 const projectId = "65b10f4a7133bd201158f309";
@@ -43,17 +44,25 @@ const createPlannerResult = (featureCount: number) => {
     acceptanceCriteria: ["The capability works."],
     priority: "medium" as const
   }));
-  const tasks = stories.map((story, index) => ({
+  const tasks = stories.flatMap((story, index) => [{
     id: `TASK-${String(index + 1)}`,
     storyId: story.id,
     title: `Task ${String(index + 1)}`,
     description: `Implement capability ${String(index + 1)}.`,
     taskType: "technical_development" as const,
+    layer: "backend" as const,
+    acceptanceCriteriaIndexes: [1],
     completionCriteria: ["Implementation is complete."],
     priority: "medium" as const,
     dependsOn: [],
     order: index + 1
-  }));
+  }, {
+    id: `TEST-${String(index + 1)}`, storyId: story.id,
+    title: `Verify capability ${String(index + 1)}`, description: "Verify valid and invalid input responses.",
+    taskType: "testing" as const, layer: "testing" as const, acceptanceCriteriaIndexes: [1],
+    completionCriteria: ["Valid requests return the expected result; invalid requests leave saved data unchanged."],
+    priority: "medium" as const, dependsOn: [`TASK-${String(index + 1)}`], order: index + 2
+  }] );
   return {
     features,
     stories,
@@ -93,6 +102,7 @@ const createDeferred = <T,>() => {
 type GenerationHarnessOptions = Readonly<{
   generateJson?: (request: LlmGenerationRequest, generateValidResponse: () => Promise<unknown>) => Promise<unknown>;
   cancellationChecks?: readonly boolean[];
+  queueLimits?: Readonly<{ concurrency: number; maxQueued: number }>;
 }>;
 
 const createGenerationHarness = (featureCount: number, options: GenerationHarnessOptions = {}) => {
@@ -100,6 +110,7 @@ const createGenerationHarness = (featureCount: number, options: GenerationHarnes
   const failedRun = createDeferred<Readonly<{ code: string; message: string }>>();
   const cancelledRun = createDeferred<Readonly<{ code: string; message: string }>>();
   const requests: LlmGenerationRequest[] = [];
+  const recordedUsage: PlanningTokenUsage[] = [];
   let savedPlan: ReturnType<typeof validateAndOrderPlan> | undefined;
   let failed = false;
   let cancelled = false;
@@ -108,18 +119,7 @@ const createGenerationHarness = (featureCount: number, options: GenerationHarnes
   const stageUpdates: Array<Readonly<{ stage: string; attempt: number }>> = [];
 
   const generateValidResponse = (request: LlmGenerationRequest): Promise<unknown> => {
-    if (request.stage === "analyzing") {
-      return Promise.resolve({
-        goals: ["Build the requested product."],
-        requirements: [{ id: "REQ-1", text: "Build the requested product with the listed capabilities.", acceptanceCriteria: ["The requested capabilities are available."] }],
-        constraints: [], assumptions: [], openQuestions: []
-      });
-    }
-    if (request.stage === "planning") {
-      const result = createPlannerResult(featureCount);
-      return Promise.resolve({ features: result.features, stories: result.stories, requirementCoverage: result.requirementCoverage });
-    }
-    if (request.stage === "decomposing") return Promise.resolve({ tasks: createPlannerResult(featureCount).tasks });
+    if (request.stage === "planning") return Promise.resolve(createPlan(featureCount));
     return Promise.reject(new Error(`Unexpected generation stage: ${request.stage}`));
   };
 
@@ -150,6 +150,7 @@ const createGenerationHarness = (featureCount: number, options: GenerationHarnes
       stageUpdates.push({ stage, attempt });
       return Promise.resolve(undefined);
     },
+    recordUsage: (_id: string, usage: PlanningTokenUsage) => { recordedUsage.push(usage); return Promise.resolve(undefined); },
     isRunCancelled: () => {
       const checks = options.cancellationChecks ?? [];
       const value = checks[Math.min(cancellationIndex, Math.max(checks.length - 1, 0))] ?? false;
@@ -179,11 +180,12 @@ const createGenerationHarness = (featureCount: number, options: GenerationHarnes
     provider,
     configuration: { provider: "groq", model: "test-model", apiKey: "test-key", timeoutMs: 1000 },
     persistenceAvailable: true,
-    logger
+    logger,
+    ...(options.queueLimits ? { queueLimits: options.queueLimits } : {})
   });
 
   return {
-    service, requests, saved, failedRun, cancelledRun, stageUpdates,
+    service, requests, saved, failedRun, cancelledRun, stageUpdates, recordedUsage,
     getSavedPlan: () => savedPlan,
     getFailure: () => failure,
     wasFailed: () => failed
@@ -196,16 +198,70 @@ const waitForGeneration = (harness: ReturnType<typeof createGenerationHarness>) 
   harness.cancelledRun.promise.then((result) => ({ kind: "cancelled" as const, result }))
 ]);
 
+void test("full generation queue rejects admission before another provider call", async () => {
+  const blocker = createDeferred<undefined>();
+  const harness = createGenerationHarness(3, { queueLimits: { concurrency: 1, maxQueued: 0 },
+    generateJson: async (_request, generateValidResponse) => { await blocker.promise; return generateValidResponse(); } });
+  try {
+    await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "first" });
+    await assert.rejects(harness.service.createRun({ projectId, requirement: "Build another product with a separate capability.", idempotencyKey: "overflow" }),
+      (error: unknown) => { assert.ok(error instanceof Error && "code" in error); assert.equal(error.code, "generation_queue_full"); return true; });
+  } finally { blocker.resolve(undefined); }
+  await waitForGeneration(harness);
+  await harness.service.stopGeneration();
+  assert.equal(harness.requests.length, 1);
+});
+
 void test("whole-plan validation accepts six and seven Features without truncation", () => {
   for (const featureCount of [6, 7]) {
     const plan = validateAndOrderPlan(createPlan(featureCount));
     assert.equal(plan.features.length, featureCount);
     assert.equal(plan.stories.length, featureCount);
-    assert.equal(plan.tasks.length, featureCount);
+    assert.equal(plan.tasks.length, featureCount * 2);
   }
 });
 
-void test("planner prompt targets at least three Features while a valid seven-Feature plan is saved intact", async () => {
+void test("plan validation accepts optional design, infrastructure, and documentation task types", () => {
+  const plan = createPlan(3);
+  const supportedTaskTypes = ["design", "infrastructure", "documentation"] as const;
+  const planWithOptionalTaskTypes = {
+    ...plan,
+    tasks: plan.tasks.map((task, index) => ({ ...task, taskType: supportedTaskTypes[index] ?? task.taskType }))
+  };
+
+  const validated = validateAndOrderPlan(planWithOptionalTaskTypes);
+  for (const taskType of supportedTaskTypes) assert.ok(validated.tasks.some((task) => task.taskType === taskType));
+});
+
+void test("generation validation requires implementation and test Tasks for each acceptance criterion", () => {
+  const plan = createPlan(3);
+  const linkedPlan = {
+    ...plan,
+    tasks: plan.tasks.flatMap((task) => [
+      { ...task, acceptanceCriteriaIndexes: [1] },
+      { ...task, id: `TEST-${task.id}`, taskType: "testing" as const, acceptanceCriteriaIndexes: [1] }
+    ])
+  };
+  const invalidPlan = {
+    ...linkedPlan,
+    tasks: linkedPlan.tasks.map((task) => ({ ...task, acceptanceCriteriaIndexes: [] }))
+  };
+
+  assert.doesNotThrow(() => validateAndOrderPlan(linkedPlan, { requireAcceptanceCriteriaCoverage: true }));
+  assert.throws(
+    () => validateAndOrderPlan(invalidPlan, { requireAcceptanceCriteriaCoverage: true }),
+    /acceptance criterion 1 has no implementation task/
+  );
+});
+
+void test("new plans require task layers while legacy plans remain readable", () => {
+  const plan = createPlan(3);
+  const missingLayers = { ...plan, tasks: plan.tasks.map(({ layer: _layer, ...task }) => task) };
+  assert.doesNotThrow(() => validateAndOrderPlan(missingLayers));
+  assert.throws(() => validateAndOrderPlan(missingLayers, { requireTaskLayers: true }), /needs exactly one layer/);
+});
+
+void test("one provider call returns the complete plan and preserves seven Features", async () => {
   const harness = createGenerationHarness(7);
   await harness.service.createRun({
     projectId,
@@ -219,96 +275,230 @@ void test("planner prompt targets at least three Features while a valid seven-Fe
   ]);
   if ("failure" in completion) assert.fail(`Generation failed: ${completion.failure.code}: ${completion.failure.message}`);
   const savedPlan = completion.plan;
-  const plannerRequest = harness.requests.find(({ stage }) => stage === "planning");
+  const plannerRequest = harness.requests[0];
   assert.ok(plannerRequest);
   assert.match(plannerRequest.systemInstructions, /between 3 and 10 meaningful Features, and never return more than 10/i);
+  assert.match(plannerRequest.systemInstructions, /include only requested capabilities/i);
+  assert.match(plannerRequest.systemInstructions, /As a \[role\], I want \[capability\] so that \[benefit\]/i);
+  assert.match(plannerRequest.systemInstructions, /Every acceptance criterion needs both an implementation task and a test task/i);
+  assert.match(plannerRequest.systemInstructions, /do not mark everything high/i);
+  assert.match(plannerRequest.systemInstructions, /design, infrastructure, or documentation/i);
+  assert.match(plannerRequest.systemInstructions, /acceptanceCriteriaIndexes/i);
+  assert.match(plannerRequest.systemInstructions, /unique sequential task IDs such as T1, T2/i);
+  assert.match(plannerRequest.systemInstructions, /payment-failure tests/i);
+  assert.match(plannerRequest.systemInstructions, /positive, negative, and edge cases/i);
+  assert.equal(plannerRequest.maxCompletionTokens, 8_192);
+  assert.deepEqual(harness.requests.map(({ stage }) => stage), ["planning"]);
+  assert.deepEqual(harness.stageUpdates.map(({ stage }) => stage), ["planning", "validating"]);
   assert.equal(savedPlan.features.length, 7);
   assert.equal(harness.getSavedPlan()?.features.length, 7);
   assert.equal(harness.wasFailed(), false);
-  assert.deepEqual(harness.requests.map(({ stage }) => stage), ["analyzing", "planning", "decomposing"]);
 });
 
-void test("transient provider failure retries only the active stage and then completes", async () => {
-  let analyzingCalls = 0;
+void test("missing Tasks fail without fabricated work or a second provider call", async () => {
+  const incompletePlan: Record<string, unknown> = { ...createPlan(3) };
+  delete incompletePlan.tasks;
+  const harness = createGenerationHarness(3, { generateJson: () => Promise.resolve(incompletePlan) });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "missing-tasks" });
+  const completion = await waitForGeneration(harness);
+  assert.equal(completion.kind, "failed");
+  assert.equal(harness.requests.length, 1);
+  assert.equal(harness.getSavedPlan(), undefined);
+});
+
+void test("partial mappings are preserved and uncovered criteria fail without blanket mappings", async () => {
+  const plan = createPlan(3);
+  const partialPlan = { ...plan, stories: plan.stories.map((story) => ({ ...story, acceptanceCriteria: [...story.acceptanceCriteria, "Invalid input leaves stored data unchanged."] })) };
+  const harness = createGenerationHarness(3, { generateJson: () => Promise.resolve(partialPlan) });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "missing-mapping" });
+  const completion = await waitForGeneration(harness);
+  assert.equal(completion.kind, "failed");
+  assert.match(harness.getFailure()?.message ?? "", /criterion 2 has no implementation task/);
+  assert.equal(harness.requests.length, 1);
+  assert.deepEqual(partialPlan.tasks[0]?.acceptanceCriteriaIndexes, [1]);
+  assert.equal(harness.getSavedPlan(), undefined);
+});
+
+void test("accurate partial task mappings survive generation unchanged", async () => {
+  const plan = createPlan(3);
+  const first = plan.stories[0];
+  assert.ok(first);
+  const partialPlan = { ...plan, stories: plan.stories.map((story) => story.id === first.id ? { ...story, acceptanceCriteria: [...story.acceptanceCriteria, "Invalid input leaves stored data unchanged."] } : story), tasks: [...plan.tasks, {
+    id: "EXTRA-BACKEND", storyId: first.id, title: "Reject invalid requests", description: "Reject invalid values before saving.",
+    taskType: "technical_development" as const, layer: "backend" as const, acceptanceCriteriaIndexes: [2], completionCriteria: ["Invalid input returns validation errors and leaves stored data unchanged."], priority: "medium" as const, dependsOn: [], order: 20
+  }, {
+    id: "EXTRA-TEST", storyId: first.id, title: "Verify rejected requests", description: "Submit invalid input and check unchanged data.",
+    taskType: "testing" as const, layer: "testing" as const, acceptanceCriteriaIndexes: [2], completionCriteria: ["Invalid input returns validation errors and leaves stored data unchanged."], priority: "medium" as const, dependsOn: ["EXTRA-BACKEND"], order: 21
+  }] };
+  const harness = createGenerationHarness(3, { generateJson: () => Promise.resolve(partialPlan) });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "partial-mapping" });
+  const completion = await waitForGeneration(harness);
+  assert.equal(completion.kind, "saved");
+  assert.deepEqual(completion.plan.tasks.find(({ id }) => id === "EXTRA-TEST")?.acceptanceCriteriaIndexes, [2]);
+  assert.deepEqual(completion.plan.tasks.find(({ id }) => id === "TASK-1")?.acceptanceCriteriaIndexes, [1]);
+  assert.equal(completion.plan.tasks.length, partialPlan.tasks.length);
+});
+
+void test("missing testing coverage adds a criterion-specific suggestion after one provider call", async () => {
+  const plan = createPlan(4);
+  const partial = { ...plan, tasks: plan.tasks.filter(({ id }) => id !== "TEST-4") };
+  const snapshot = JSON.stringify(partial);
+  const harness = createGenerationHarness(4, { generateJson: () => Promise.resolve(partial) });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "missing-test-only" });
+  const completion = await waitForGeneration(harness);
+  assert.equal(completion.kind, "saved");
+  assert.equal(harness.requests.length, 1);
+  const suggestion = completion.plan.tasks.find(({ id }) => id === "LOCAL-TEST-1");
+  assert.ok(suggestion);
+  assert.equal(suggestion.storyId, "STORY-4");
+  assert.match(suggestion.title, /^Suggested test AC1:/);
+  assert.deepEqual(suggestion.acceptanceCriteriaIndexes, [1]);
+  assert.deepEqual(suggestion.dependsOn, ["TASK-4"]);
+  assert.deepEqual(suggestion.completionCriteria, plan.stories[3]?.acceptanceCriteria);
+  assert.equal(suggestion.layer, "testing");
+  assert.equal(JSON.stringify(partial), snapshot);
+  for (const task of partial.tasks) {
+    assert.deepEqual(completion.plan.tasks.find(({ id }) => id === task.id)?.acceptanceCriteriaIndexes, task.acceptanceCriteriaIndexes);
+  }
+  assert.deepEqual(completeMissingTestCoverage(completion.plan), completion.plan);
+});
+
+void test("local testing suggestions avoid existing IDs and preserve selective mappings", () => {
+  const plan = createPlan(3);
+  const partial = {
+    ...plan,
+    stories: plan.stories.map((story) => ({ ...story, acceptanceCriteria: ["Valid input is saved.", "Invalid input is rejected without writing data."] })),
+    tasks: plan.tasks.map((task) => ({ ...task, id: task.id === "TASK-1" ? "LOCAL-TEST-1" : task.id,
+      dependsOn: task.dependsOn.map((id) => id === "TASK-1" ? "LOCAL-TEST-1" : id), acceptanceCriteriaIndexes: task.taskType === "testing" ? [1] : [1, 2] }))
+  };
+  const completed = completeMissingTestCoverage(partial);
+  const added = completed.tasks.slice(partial.tasks.length);
+  assert.equal(added.length, 3);
+  assert.equal(new Set(completed.tasks.map(({ id }) => id)).size, completed.tasks.length);
+  for (const task of added) {
+    assert.deepEqual(task.acceptanceCriteriaIndexes, [2]);
+    assert.deepEqual(task.completionCriteria, ["Invalid input is rejected without writing data."]);
+  }
+  assert.deepEqual(completed.tasks.slice(0, partial.tasks.length), partial.tasks);
+});
+
+void test("a frontend test does not hide missing backend task testing", () => {
+  const plan = createPlan(3);
+  const implementation = plan.tasks[0];
+  assert.ok(implementation);
+  const frontend = { ...implementation, id: "FRONTEND-1", layer: "frontend" as const, dependsOn: [] };
+  const input = {
+    ...plan,
+    tasks: [...plan.tasks.map((task) => task.id === "TEST-1" ? { ...task, dependsOn: [frontend.id] } : task), frontend]
+  };
+  const completed = completeMissingTestCoverage(input);
+  const added = completed.tasks.slice(input.tasks.length);
+  assert.equal(added.length, 1);
+  assert.deepEqual(added[0]?.dependsOn, ["TASK-1"]);
+  assert.deepEqual(added[0].acceptanceCriteriaIndexes, [1]);
+  assert.deepEqual(completeMissingTestCoverage(completed), completed);
+});
+
+void test("a test can verify development through a transitive integration dependency", () => {
+  const plan = createPlan(3);
+  const implementation = plan.tasks[0];
+  assert.ok(implementation);
+  const frontend = { ...implementation, id: "FRONTEND-1", layer: "frontend" as const, dependsOn: [implementation.id] };
+  const input = { ...plan, tasks: [...plan.tasks.map((task) => task.id === "TEST-1" ? { ...task, dependsOn: [frontend.id] } : task), frontend] };
+  assert.deepEqual(completeMissingTestCoverage(input), input);
+});
+
+void test("priority labels are normalized to the supported priority values", async () => {
+  const plan = createPlan(3);
+  const planWithNonCanonicalPriorities = {
+    ...plan,
+    features: plan.features.map((feature, index) => ({
+      ...feature,
+      priority: ["HIGH", "P1", "urgent"][index] ?? "unknown"
+    })),
+    stories: plan.stories.map((story, index) => ({
+      ...story,
+      priority: ["P2", "low priority", "not specified"][index] ?? "unknown"
+    }))
+  };
   const harness = createGenerationHarness(3, {
-    generateJson: (request, generateValidResponse) => {
-      if (request.stage === "analyzing" && analyzingCalls === 0) {
-        analyzingCalls += 1;
-        return Promise.reject(new LlmProviderError("provider_network_error", "Network unavailable.", true));
-      }
-      if (request.stage === "analyzing") analyzingCalls += 1;
-      return generateValidResponse();
-    }
+    generateJson: () => Promise.resolve(planWithNonCanonicalPriorities)
   });
 
-  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "transient-retry" });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "priority-normalization" });
   const completion = await waitForGeneration(harness);
 
   assert.equal(completion.kind, "saved");
-  assert.equal(analyzingCalls, 2);
-  assert.deepEqual(harness.stageUpdates.filter(({ stage }) => stage === "analyzing").map(({ attempt }) => attempt), [1, 2]);
-  assert.deepEqual(harness.requests.map(({ stage }) => stage), ["analyzing", "analyzing", "planning", "decomposing"]);
-  assert.equal(harness.wasFailed(), false);
+  assert.deepEqual(completion.plan.features.map((feature) => feature.priority), ["high", "high", "critical"]);
+  assert.deepEqual(completion.plan.stories.map((story) => story.priority), ["medium", "low", "medium"]);
 });
 
-void test("correctable schema failure retries with validation findings", async () => {
-  let analyzingCalls = 0;
-  const harness = createGenerationHarness(3, {
-    generateJson: (request, generateValidResponse) => {
-      if (request.stage !== "analyzing") return generateValidResponse();
-      analyzingCalls += 1;
-      if (analyzingCalls === 1) return Promise.resolve({ goals: [] });
-      return generateValidResponse();
-    }
-  });
-
-  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "schema-retry" });
+void test("usage is recorded for validation failures without a second provider request", async () => {
+  const usage = { inputTokens: 100, outputTokens: 200, totalTokens: 300 };
+  const harness = createGenerationHarness(3, { generateJson: (request) => {
+    request.onUsage?.(usage);
+    return Promise.resolve({ brief: {}, features: [] });
+  } });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "usage-on-invalid-plan" });
   const completion = await waitForGeneration(harness);
-
-  assert.equal(completion.kind, "saved");
-  assert.equal(analyzingCalls, 2);
-  assert.deepEqual(harness.stageUpdates.filter(({ stage }) => stage === "analyzing").map(({ attempt }) => attempt), [1, 2]);
-  const correctedRequest = harness.requests[1];
-  assert.ok(correctedRequest);
-  assert.ok(typeof correctedRequest.input === "object" && correctedRequest.input !== null && "validationFindings" in correctedRequest.input);
+  assert.equal(completion.kind, "failed");
+  assert.deepEqual(harness.recordedUsage, [usage]);
+  assert.equal(harness.requests.length, 1);
 });
 
-void test("retryable failure stops after the bounded third attempt and never saves a version", async () => {
-  let analyzingCalls = 0;
+void test("transient provider failure is not retried and saves no version", async () => {
+  let providerCalls = 0;
   const harness = createGenerationHarness(3, {
-    generateJson: (request, generateValidResponse) => {
-      if (request.stage !== "analyzing") return generateValidResponse();
-      analyzingCalls += 1;
+    generateJson: () => {
+      providerCalls += 1;
       return Promise.reject(new LlmProviderError("provider_network_error", "Network unavailable.", true));
     }
   });
 
-  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "retry-exhausted" });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "single-provider-attempt" });
   const completion = await waitForGeneration(harness);
 
   assert.equal(completion.kind, "failed");
-  assert.equal(analyzingCalls, 3);
-  assert.deepEqual(harness.stageUpdates.filter(({ stage }) => stage === "analyzing").map(({ attempt }) => attempt), [1, 2, 3]);
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(harness.requests.map(({ stage }) => stage), ["planning"]);
   assert.equal(harness.getFailure()?.code, "provider_network_error");
   assert.equal(harness.getSavedPlan(), undefined);
 });
 
-void test("non-retryable provider failure is returned after one attempt and saves no version", async () => {
-  let analyzingCalls = 0;
+void test("schema failure is terminal after one provider call", async () => {
+  let providerCalls = 0;
   const harness = createGenerationHarness(3, {
-    generateJson: (request, generateValidResponse) => {
-      if (request.stage !== "analyzing") return generateValidResponse();
-      analyzingCalls += 1;
-      return Promise.reject(new LlmProviderError("invalid_api_key", "Provider authentication failed.", false));
+    generateJson: () => {
+      providerCalls += 1;
+      return Promise.resolve({ brief: {}, features: [], stories: [], tasks: [] });
     }
   });
 
-  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "non-retryable-provider-error" });
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "schema-single-attempt" });
   const completion = await waitForGeneration(harness);
 
   assert.equal(completion.kind, "failed");
-  assert.equal(analyzingCalls, 1);
-  assert.equal(harness.getFailure()?.code, "invalid_api_key");
+  assert.equal(providerCalls, 1);
+  assert.deepEqual(harness.requests.map(({ stage }) => stage), ["planning"]);
+  assert.equal(harness.getFailure()?.code, "VALIDATION_FAILED");
+  assert.equal(harness.getSavedPlan(), undefined);
+});
+
+void test("provider rate limit is returned after one attempt and saves no version", async () => {
+  let providerCalls = 0;
+  const harness = createGenerationHarness(3, {
+    generateJson: () => {
+      providerCalls += 1;
+      return Promise.reject(new LlmProviderError("rate_limit_exceeded", "LLM provider returned HTTP 429.", false));
+    }
+  });
+
+  await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "provider-rate-limit" });
+  const completion = await waitForGeneration(harness);
+
+  assert.equal(completion.kind, "failed");
+  assert.equal(providerCalls, 1);
+  assert.equal(harness.getFailure()?.code, "rate_limit_exceeded");
   assert.equal(harness.getSavedPlan(), undefined);
 });
 
@@ -331,14 +521,14 @@ void test("cancellation before the first provider call stops generation without 
   assert.equal(harness.getSavedPlan(), undefined);
 });
 
-void test("cancellation after a stage response prevents the next stage and persistence", async () => {
+void test("cancellation after the single provider response prevents persistence", async () => {
   const harness = createGenerationHarness(3, { cancellationChecks: [false, true] });
 
   await harness.service.createRun({ projectId, requirement: "Build the requested product with the listed capabilities.", idempotencyKey: "cancel-between-stages" });
   const completion = await waitForGeneration(harness);
 
   assert.equal(completion.kind, "cancelled");
-  assert.deepEqual(harness.requests.map(({ stage }) => stage), ["analyzing"]);
+  assert.deepEqual(harness.requests.map(({ stage }) => stage), ["planning"]);
   assert.equal(completion.result.code, "RUN_CANCELLED");
   assert.equal(harness.getSavedPlan(), undefined);
 });

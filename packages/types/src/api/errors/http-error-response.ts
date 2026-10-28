@@ -1,4 +1,7 @@
 export type ApiErrorCode =
+  | "api_rate_limit_exceeded"
+  | "generation_active"
+  | "generation_queue_full"
   | "internal_error"
   | "route_not_found"
   | "validation_error"

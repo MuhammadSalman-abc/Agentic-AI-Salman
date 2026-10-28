@@ -15,12 +15,11 @@ sequenceDiagram
   API->>DB: Persist queued run and input snapshot
   API-->>Web: 202 + run ID
   Runner->>DB: Atomically claim queued run
-  loop bounded stage calls
-    Runner->>DB: Persist stage and attempt
-    Runner->>LLM: Stage prompt + untrusted input
-    LLM-->>Runner: Unknown JSON payload
-    Runner->>Runner: Parse stage schema and validate relationships
-  end
+  Runner->>DB: Set planning stage and one attempt
+  Runner->>LLM: Complete-plan prompt + untrusted input (one call)
+  LLM-->>Runner: Unknown complete-plan JSON payload
+  Runner->>Runner: Parse full schema and validate relationships
+  Runner->>DB: Set deterministic validation stage
   Runner->>Runner: Whole-plan validation + topological order
   Runner->>DB: Transaction: insert immutable version, succeed run, update project pointer
   Web->>API: Poll run status
@@ -28,46 +27,40 @@ sequenceDiagram
 ```
 
 Provider output is always `unknown` until parsed. Deterministic validation is the final
-authority for persistence eligibility. The pipeline uses three provider calls so a separate
-whole-plan AI review does not consume an additional rate-limited request.
+authority for persistence eligibility. Each generation makes one provider call that returns
+the brief, Features, Stories, and Tasks together. If the response omits the top-level Tasks
+array or leaves a Story without an implementation or testing Task, the API fills the missing
+Task type locally; generated testing Tasks cover positive/negative/edge cases. Other schema or
+provider failures end that run; the system does not make an automatic correction call. A user
+retry starts a new run and can consume another provider request.
 
 ## 3.2 Ordered stages
 
-1. **Requirement Analyst:** extract goals, requirements, acceptance criteria, constraints,
-   assumptions, and open questions. Preserve uncertainty.
-2. **Feature and Story Planner:** assign each requirement a coverage outcome and instruct the
-   model to produce three to ten Features. Planner schema and final generation validation
-   reject output above ten; the model must group related capabilities while preserving
-   requirement coverage.
-3. **Task Decomposer:** produce development/testing Tasks with completion criteria, priority,
-   and dependency edges. Every Story must receive at least one Task.
-4. **Deterministic validator:** parse the complete plan; enforce structural and technical
+1. **Single-call planner:** analyze the requirement and return the complete brief, three to
+   ten Features, Stories, Tasks, coverage, assumptions, and open questions in one response.
+   Every Feature must have a Story, every Story a Task, and each Story should include a
+   testing Task whose completion criteria cover positive, negative, and edge cases.
+2. **Deterministic validator:** parse the complete plan; enforce structural and technical
    invariants; recalculate dependency order; and reject invalid output, including generated
    plans with more than ten Features.
-5. **Version commit:** atomically save immutable plan version, mark the run succeeded, and
+3. **Version commit:** atomically save immutable plan version, mark the run succeeded, and
    advance the project's current-version pointer.
 
-The three AI stages are bounded model calls, not autonomous services or independent agents.
-No stage can bypass persistence validation.
+The planner is one bounded model call, not a group of autonomous agents. It cannot bypass
+persistence validation.
 
 ## 3.3 State machine
 
 ```mermaid
 stateDiagram-v2
   [*] --> queued
-  queued --> analyzing: atomic claim
-  analyzing --> planning
-  planning --> decomposing
-  decomposing --> validating
+  queued --> planning: atomic claim
+  planning --> validating: one provider response
   validating --> succeeded: atomic version commit
-  analyzing --> failed: terminal error / retry budget spent
-  planning --> failed: terminal error / retry budget spent
-  decomposing --> failed: terminal error / retry budget spent
+  planning --> failed: provider or schema error
   validating --> failed: invariant failure
   queued --> cancelled: cancel wins atomic update
-  analyzing --> cancelled: cancel wins atomic update
   planning --> cancelled: cancel wins atomic update
-  decomposing --> cancelled: cancel wins atomic update
   validating --> cancelled: cancel wins atomic update
 ```
 
@@ -80,10 +73,10 @@ run; never mutate a terminal run back to queued. A stale `baseVersion` fails wit
 
 ## 3.4 Retry, cancellation, and restart rules
 
-- Retry transient provider failures and schema/quality-correction failures at most twice per
-  stage (three total attempts); use bounded exponential backoff with jitter.
-- Do not retry authentication, unsupported-model, or non-rate-limit quota errors.
-- Persist overall and per-stage attempts before/while a call runs. Error details stored for
+- Make one provider attempt per run. Do not automatically retry 429s, network failures,
+  malformed output, or schema failures; a user-initiated new run is required to try again.
+- Persist the provider attempt before the call and validation stage before checking the plan.
+  Error details stored for
   operators must be sanitized; public responses contain stable code/message only.
 - Cancellation atomically transitions queued/active to cancelled. Check cancellation before
   and after every provider call and immediately before commit. A late response cannot commit.

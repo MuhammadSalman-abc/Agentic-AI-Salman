@@ -52,7 +52,8 @@ export const analystResultSchema = z.object({
   }).strict()).min(1).max(30),
   constraints: z.array(z.string().min(1).max(500)).max(20),
   assumptions: z.array(z.string().min(1).max(500)).max(20),
-  openQuestions: z.array(z.string().min(1).max(500)).max(20)
+  openQuestions: z.array(z.string().min(1).max(500)).max(20),
+  outOfScope: z.array(z.string().min(1).max(500)).max(20).optional()
 }).strict();
 
 const featureSchema = z.object({
@@ -89,7 +90,9 @@ export const taskResultSchema = z.object({
     storyId: idSchema,
     title: z.string().min(1).max(160),
     description: z.string().min(1).max(2_000),
-    taskType: z.enum(["technical_development", "testing"]),
+    taskType: z.enum(["technical_development", "testing", "design", "infrastructure", "documentation"]),
+    acceptanceCriteriaIndexes: z.array(z.number().int().positive()).max(12).optional(),
+    layer: z.enum(["backend", "frontend", "data", "integration", "testing", "design", "infrastructure", "documentation"]).optional(),
     completionCriteria: z.array(z.string().min(1).max(500)).min(1).max(12),
     priority: prioritySchema,
     dependsOn: z.array(idSchema).max(100),
@@ -123,6 +126,12 @@ export const planningProjectSchema = z.object({
   acceptedVersion: z.number().int().positive().nullable()
 }).strict();
 
+const tokenUsageSchema = z.object({
+  inputTokens: z.number().int().nonnegative().nullable(),
+  outputTokens: z.number().int().nonnegative().nullable(),
+  totalTokens: z.number().int().nonnegative().nullable()
+}).strict();
+
 export const planningRunSchema = z.object({
   id: z.string().regex(/^[a-f\d]{24}$/i),
   projectId: z.string().regex(/^[a-f\d]{24}$/i),
@@ -132,7 +141,8 @@ export const planningRunSchema = z.object({
   resultVersion: z.number().int().positive().nullable(),
   error: z.object({ code: z.string(), message: z.string() }).strict().nullable(),
   createdAt: z.iso.datetime(),
-  finishedAt: z.iso.datetime().nullable()
+  finishedAt: z.iso.datetime().nullable(),
+  usage: tokenUsageSchema.nullable().optional()
 }).strict();
 
 const versionValidationSchema = z.object({
@@ -153,7 +163,8 @@ export const planningVersionSummarySchema = z.object({
 
 export const planningVersionSchema = planningVersionSummarySchema.extend({
   inputSnapshot: z.object({ requirement: z.string(), context: z.string(), instructions: z.string() }).strict().nullable().default(null),
-  plan: architecturePlanSchema
+  plan: architecturePlanSchema,
+  usage: tokenUsageSchema.nullable().optional()
 }).strict();
 
 const entityChangesSchema = z.object({ added: z.array(z.string()), removed: z.array(z.string()), changed: z.array(z.string()) }).strict();
@@ -184,7 +195,7 @@ export type PlannerResult = z.infer<typeof plannerResultSchema>;
 export type TaskResult = z.infer<typeof taskResultSchema>;
 export type ArchitecturePlanInput = z.infer<typeof architecturePlanSchema>;
 
-export const validateAndOrderPlan = (input: unknown, options: Readonly<{ minimumFeatureCount?: number; maximumFeatureCount?: number }> = {}): ArchitecturePlanInput => {
+export const validateAndOrderPlan = (input: unknown, options: Readonly<{ minimumFeatureCount?: number; maximumFeatureCount?: number; requireAcceptanceCriteriaCoverage?: boolean; requireTaskLayers?: boolean }> = {}): ArchitecturePlanInput => {
   const plan = architecturePlanSchema.parse(input);
   const minimumFeatureCount = options.minimumFeatureCount ?? 3;
   const maximumFeatureCount = options.maximumFeatureCount ?? 30;
@@ -227,6 +238,9 @@ export const validateAndOrderPlan = (input: unknown, options: Readonly<{ minimum
     if (!plan.stories.some(({ featureId }) => featureId === feature.id)) throw new PlanValidationError(`Feature ${feature.id} has no user stories.`);
   }
   for (const task of plan.tasks) {
+    if (options.requireTaskLayers && !task.layer) throw new PlanValidationError(`Task ${task.id} needs exactly one layer.`);
+    if (options.requireTaskLayers && task.taskType === "testing" && task.layer !== "testing") throw new PlanValidationError(`Testing task ${task.id} must use the testing layer.`);
+    if (options.requireTaskLayers && task.taskType === "technical_development" && !["backend", "frontend", "data", "integration"].includes(task.layer ?? "")) throw new PlanValidationError(`Development task ${task.id} needs a backend, frontend, data, or integration layer.`);
     if (!storyIds.has(task.storyId)) throw new PlanValidationError(`Task ${task.id} references an unknown story.`);
     if (new Set(task.dependsOn).size !== task.dependsOn.length) throw new PlanValidationError(`Task ${task.id} has duplicate dependencies.`);
     if (task.dependsOn.includes(task.id)) throw new PlanValidationError(`Task ${task.id} cannot depend on itself.`);
@@ -234,6 +248,24 @@ export const validateAndOrderPlan = (input: unknown, options: Readonly<{ minimum
   }
   for (const story of plan.stories) {
     if (!plan.tasks.some(({ storyId }) => storyId === story.id)) throw new PlanValidationError(`Story ${story.id} has no implementation tasks.`);
+    if (options.requireAcceptanceCriteriaCoverage) {
+      for (const index of story.acceptanceCriteria.keys()) {
+        const criterionNumber = index + 1;
+        const coveringTasks = plan.tasks.filter((task) => task.storyId === story.id && task.acceptanceCriteriaIndexes?.includes(criterionNumber));
+        if (!coveringTasks.some((task) => task.taskType === "technical_development")) {
+          throw new PlanValidationError(`Story ${story.id} acceptance criterion ${String(criterionNumber)} has no implementation task.`);
+        }
+        if (!coveringTasks.some((task) => task.taskType === "testing")) {
+          throw new PlanValidationError(`Story ${story.id} acceptance criterion ${String(criterionNumber)} has no testing task.`);
+        }
+      }
+    }
+    for (const task of plan.tasks.filter(({ storyId }) => storyId === story.id)) {
+      const indexes = task.acceptanceCriteriaIndexes ?? [];
+      if (options.requireAcceptanceCriteriaCoverage && indexes.length === 0) throw new PlanValidationError(`Task ${task.id} must map to at least one acceptance criterion.`);
+      if (new Set(indexes).size !== indexes.length) throw new PlanValidationError(`Task ${task.id} has duplicate acceptance-criterion mappings.`);
+      if (indexes.some((index) => index > story.acceptanceCriteria.length)) throw new PlanValidationError(`Task ${task.id} maps to an unknown acceptance criterion.`);
+    }
   }
 
   const remaining = new Map(plan.tasks.map((task) => [task.id, new Set(task.dependsOn)]));

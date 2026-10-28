@@ -15,4 +15,8 @@ export type ValidatedApiEnvironment = Readonly<{
   GEMINI_API_KEY?: string | undefined;
   LLM_TIMEOUT_MS?: number | undefined;
   LOG_LEVEL: LogLevel;
+  GENERATION_CONCURRENCY?: number | undefined;
+  GENERATION_MAX_QUEUED?: number | undefined;
+  API_RATE_LIMIT_PER_MINUTE?: number | undefined;
+  GENERATION_RATE_LIMIT_PER_MINUTE?: number | undefined;
 }>;

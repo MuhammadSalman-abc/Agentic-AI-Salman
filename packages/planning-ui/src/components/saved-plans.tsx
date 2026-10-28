@@ -5,6 +5,7 @@ import { useState, type ReactElement } from "react";
 import type { ArchitecturePlan, PlanningProject, PlanningVersionSummary } from "@workspace/types";
 import { Button } from "@workspace/ui/primitives";
 import { PlanResult } from "./plan-result.js";
+import type { PlanUsageProps } from "./plan-usage.js";
 
 export type SavedPlansProps = Readonly<{
   projects: readonly PlanningProject[];
@@ -22,18 +23,22 @@ export type SavedPlansProps = Readonly<{
   onRemoveVersion: (project: PlanningProject, version: number) => void;
   onAccept: () => void;
   onClose: () => void;
+  onSave?: ((plan: ArchitecturePlan) => Promise<void>) | undefined;
+  usage?: PlanUsageProps["usage"];
+  resultSource?: PlanUsageProps["source"] | undefined;
 }>;
 
-export const SavedPlans = ({ projects, versionsByProject, expandedProjectId, activeProjectId, activeVersion, selectedPlan, accepted, accepting, loading, error, onToggleProject, onSelectVersion, onRemoveVersion, onAccept, onClose }: SavedPlansProps): ReactElement => {
+export const SavedPlans = ({ projects, versionsByProject, expandedProjectId, activeProjectId, activeVersion, selectedPlan, accepted, accepting, loading, error, onToggleProject, onSelectVersion, onRemoveVersion, onAccept, onClose, onSave, usage, resultSource }: SavedPlansProps): ReactElement => {
   const [search, setSearch] = useState("");
   const query = search.trim().toLocaleLowerCase();
+  const latestVersion = projects.find(({ id }) => id === activeProjectId)?.currentVersion;
   const visibleProjects = projects.filter((project) => {
     if (!query || project.name.toLocaleLowerCase().includes(query)) return true;
     return (versionsByProject[project.id] ?? []).some(({ requirementSummary }) => requirementSummary?.toLocaleLowerCase().includes(query));
   });
 
   return (
-  <section aria-label="Saved plans history" className="mx-auto w-full rounded-3xl border border-violet-100/80 bg-gradient-to-br from-white via-violet-50/50 to-sky-50/60 p-4 shadow-md shadow-indigo-950/[0.04] sm:p-6">
+  <section aria-label="Saved plans history" className="mx-auto w-full rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-950/[0.025] sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-100 to-sky-100 text-violet-700"><ClipboardList aria-hidden="true" className="size-4" /></span>
@@ -72,10 +77,10 @@ export const SavedPlans = ({ projects, versionsByProject, expandedProjectId, act
           {(versionsByProject[project.id] ?? []).length === 0 && <p className="px-3 py-2 text-[11px] text-slate-500">No generated versions yet.</p>}
         </div>}
       </div>)}
-      {visibleProjects.length === 0 && <p className="rounded-xl border border-dashed border-violet-200 bg-white/70 p-3 text-xs text-slate-500">No plans match “{search}”.</p>}
+      {query && visibleProjects.length === 0 && projects.length > 0 && <p className="rounded-xl border border-dashed border-violet-200 bg-white/70 p-3 text-xs text-slate-500">No plans match “{search}”.</p>}
       </div>
       <div className="min-w-0">
-        {activeProjectId && activeVersion !== null && selectedPlan ? <PlanResult plan={selectedPlan} version={activeVersion} accepted={accepted} accepting={accepting} onAccept={onAccept} /> : <div className="flex min-h-64 items-center justify-center rounded-2xl border border-dashed border-violet-200 bg-white/60 p-6 text-center"><p className="max-w-sm text-sm leading-6 text-slate-500">Select a version to preview its plan here. The version list stays beside the preview so you can switch between plans quickly.</p></div>}
+        {activeProjectId && activeVersion !== null && selectedPlan ? <>{latestVersion && latestVersion !== activeVersion && <p className="mb-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-[11px] text-amber-800">Earlier version. Open version {latestVersion} to edit the latest plan.</p>}<PlanResult plan={selectedPlan} version={activeVersion} accepted={accepted} accepting={accepting} onAccept={onAccept} onSave={activeVersion === latestVersion ? onSave : undefined} usage={usage} resultSource={resultSource} /></> : <div className="flex min-h-64 items-center justify-center rounded-2xl border border-dashed border-violet-200 bg-white/60 p-6 text-center"><p className="max-w-sm text-sm leading-6 text-slate-500">Select a version to preview its plan here. The version list stays beside the preview so you can switch between plans quickly.</p></div>}
       </div>
     </div>
   </section>

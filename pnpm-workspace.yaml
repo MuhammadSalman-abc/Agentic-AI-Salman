@@ -13,6 +13,11 @@ overrides:
   '@modelcontextprotocol/sdk': 1.32.1
   sharp: 0.35.5
   source-map-js: 1.2.2
+  # MCP SDK supports both Zod majors; keep it on the patched v4 implementation.
+  zod: 4.6.7
+  # Security fixes within the existing dependency major versions.
+  body-parser: 2.4.0
+  undici: 7.30.1
 
 audit:
   level: high
@@ -23,3 +28,6 @@ audit:
 
 patchedDependencies:
   braces@3.0.3: patches/braces@3.0.3.patch
+
+minimumReleaseAgeExclude:
+  - shadcn@4.23.0

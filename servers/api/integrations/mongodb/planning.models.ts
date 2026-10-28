@@ -1,6 +1,6 @@
 import type { Types} from "mongoose";
 import mongoose, { model, Schema, type Model } from "mongoose";
-import type { ArchitecturePlan } from "@workspace/types";
+import type { ArchitecturePlan, PlanningTokenUsage } from "@workspace/types";
 
 export type ProjectRecord = {
   name: string;
@@ -19,6 +19,7 @@ export type VersionInputSnapshot = Readonly<{ requirement: string; context: stri
 export type GenerationRunRecord = Readonly<{
   projectId: Types.ObjectId;
   status: RunStatus;
+  active?: boolean;
   stage: RunStage | null;
   requirement: string;
   instructions: string;
@@ -32,6 +33,7 @@ export type GenerationRunRecord = Readonly<{
   idempotencyKey: string;
   requestFingerprint: string;
   resultVersion: number | null;
+  usage: PlanningTokenUsage | null;
   error: { code: string; message: string; retryable: boolean } | null;
   createdAt: Date;
   startedAt: Date | null;
@@ -47,6 +49,7 @@ export type ArchitectureVersionRecord = Readonly<{
   runId: Types.ObjectId | null;
   inputSnapshot: VersionInputSnapshot | null;
   plan: ArchitecturePlan;
+  usage: PlanningTokenUsage | null;
   validation: { passed: boolean; checks: string[]; warnings: string[] };
   createdAt: Date;
 }>;
@@ -60,6 +63,7 @@ const projectSchema = new Schema<ProjectRecord>({
 }, { timestamps: true });
 
 const generationRunSchema = new Schema<GenerationRunRecord>({
+  active: { type: Boolean, default: false },
   projectId: { type: Schema.Types.ObjectId, required: true, index: true },
   status: { type: String, required: true, enum: ["queued", "analyzing", "planning", "decomposing", "grooming", "validating", "succeeded", "failed", "cancelled"], index: true },
   stage: { type: String, enum: ["analyzing", "planning", "decomposing", "grooming", "validating"], default: null },
@@ -75,11 +79,13 @@ const generationRunSchema = new Schema<GenerationRunRecord>({
   idempotencyKey: { type: String, required: true },
   requestFingerprint: { type: String, required: true },
   resultVersion: { type: Number, default: null },
+  usage: { type: Schema.Types.Mixed, default: null },
   error: { type: Schema.Types.Mixed, default: null },
   startedAt: { type: Date, default: null },
   finishedAt: { type: Date, default: null }
 }, { timestamps: true });
 generationRunSchema.index({ projectId: 1, idempotencyKey: 1 }, { unique: true });
+generationRunSchema.index({ projectId: 1, active: 1 }, { unique: true, partialFilterExpression: { active: true } });
 generationRunSchema.index({ projectId: 1, createdAt: -1 });
 
 const architectureVersionSchema = new Schema<ArchitectureVersionRecord>({
@@ -91,6 +97,7 @@ const architectureVersionSchema = new Schema<ArchitectureVersionRecord>({
   runId: { type: Schema.Types.ObjectId, default: null },
   inputSnapshot: { type: Schema.Types.Mixed, default: null },
   plan: { type: Schema.Types.Mixed, required: true },
+  usage: { type: Schema.Types.Mixed, default: null },
   validation: { type: Schema.Types.Mixed, required: true }
 }, { timestamps: true });
 architectureVersionSchema.index({ projectId: 1, version: 1 }, { unique: true });

@@ -4,12 +4,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import { isSmallTalk } from "./message-intent";
 import type {
   AcceptProjectVersionResponse, ArchitecturePlan, CreateProjectResponse, CreateRunResponse, FindSavedRequirementResponse, GetProjectVersionResponse,
-  GetRunResponse, ListProjectsResponse, ListProjectVersionsResponse, PlanningProject, PlanningRun, PlanningVersionSummary
+  GetRunResponse, ListProjectsResponse, ListProjectVersionsResponse, PlanningProject, PlanningRun, PlanningTokenUsage, PlanningVersionSummary
 } from "@workspace/types";
 
 type ApiFailure = Readonly<{ error?: Readonly<{ message?: string }> }>;
 type ChatMessage = Readonly<{ id: string; role: "user" | "assistant"; text: string }>;
-type SavedPlanPreview = Readonly<{ projectId: string; version: number; plan: ArchitecturePlan; accepted: boolean }>;
+type SavedPlanPreview = Readonly<{ projectId: string; version: number; plan: ArchitecturePlan; accepted: boolean; usage: PlanningTokenUsage | null; source: "generation" | "user-edit" }>;
 
 const requestJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(url, {
@@ -28,7 +28,7 @@ const requestJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
 const stageLabels: Readonly<Record<PlanningRun["status"], string>> = {
   queued: "Getting things ready…",
   analyzing: "Understanding your requirement…",
-  planning: "Designing features and stories…",
+  planning: "Generating your complete plan…",
   decomposing: "Breaking stories into tasks…",
   grooming: "Reviewing the plan…",
   validating: "Checking the plan structure…",
@@ -37,7 +37,7 @@ const stageLabels: Readonly<Record<PlanningRun["status"], string>> = {
   cancelled: "Generation was cancelled."
 };
 
-const statusOrder: readonly PlanningRun["status"][] = ["analyzing", "planning", "decomposing", "grooming", "validating", "succeeded"];
+const statusOrder: readonly PlanningRun["status"][] = ["planning", "validating", "succeeded"];
 
 const usePlanningChat = (apiBaseUrl: string) => {
   const [projectName, setProjectName] = useState("My AI project");
@@ -59,6 +59,9 @@ const usePlanningChat = (apiBaseUrl: string) => {
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [savingEdits, setSavingEdits] = useState(false);
+  const [planUsage, setPlanUsage] = useState<PlanningTokenUsage | null>(null);
+  const [resultSource, setResultSource] = useState<"generation" | "database" | "user-edit">("generation");
 
   useEffect(() => {
     let active = true;
@@ -145,6 +148,8 @@ const usePlanningChat = (apiBaseUrl: string) => {
           setContext(updatedProject.context);
           setActiveVersion(latest.version);
           setPlan(latest.plan);
+          setPlanUsage(latest.usage ?? null);
+          setResultSource(latest.source);
           setAcceptedVersion(updatedProject.acceptedVersion);
         }
       }
@@ -168,7 +173,9 @@ const usePlanningChat = (apiBaseUrl: string) => {
         projectId: project.id,
         version: version.version,
         plan: version.plan,
-        accepted: project.acceptedVersion === version.version
+        accepted: project.acceptedVersion === version.version,
+        usage: version.usage ?? null,
+        source: version.source
       });
     } catch (cause) {
       setHistoryError(cause instanceof Error ? cause.message : "This saved plan could not be opened.");
@@ -180,7 +187,7 @@ const usePlanningChat = (apiBaseUrl: string) => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const submittedRequirement = requirement.trim();
-    if (pending || submittedRequirement.length === 0) return;
+    if (pending || savingEdits || submittedRequirement.length === 0) return;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", text: submittedRequirement };
     setRequirement("");
     setError(null);
@@ -211,6 +218,8 @@ const usePlanningChat = (apiBaseUrl: string) => {
     setPlan(null);
     setActiveVersion(null);
     setAcceptedVersion(null);
+    setPlanUsage(null);
+    setResultSource("generation");
 
     try {
       const { match } = await requestJson<FindSavedRequirementResponse>(`${apiBaseUrl}/api/planning/versions/lookup`, {
@@ -229,6 +238,8 @@ const usePlanningChat = (apiBaseUrl: string) => {
         setActiveVersion(match.version.version);
         setAcceptedVersion(match.project.acceptedVersion);
         setPlan(match.version.plan);
+        setPlanUsage(match.version.usage ?? null);
+        setResultSource("database");
         setRun(null);
         setMessages([userMessage, assistantMessage]);
         setSavedProjects((current) => [match.project, ...current.filter(({ id }) => id !== match.project.id)]);
@@ -259,6 +270,7 @@ const usePlanningChat = (apiBaseUrl: string) => {
         const current = await requestJson<GetRunResponse>(`${apiBaseUrl}/api/generation-runs/${started.id}`);
         latest = current.run;
         setRun(latest);
+        setPlanUsage(latest.usage ?? null);
         if (current.plan) setPlan(current.plan);
       }
       if (latest.status === "succeeded" && latest.resultVersion !== null) {
@@ -285,7 +297,7 @@ const usePlanningChat = (apiBaseUrl: string) => {
   const acceptPlan = async (target?: Readonly<{ projectId: string; version: number }>): Promise<void> => {
     const targetProjectId = target?.projectId ?? projectId;
     const targetVersion = target?.version ?? activeVersion;
-    if (!targetProjectId || targetVersion === null || accepting) return;
+    if (!targetProjectId || targetVersion === null || accepting || savingEdits) return;
     setAccepting(true);
     setError(null);
     try {
@@ -310,12 +322,61 @@ const usePlanningChat = (apiBaseUrl: string) => {
     }
   };
 
+  const startNewPlan = (): void => {
+    if (pending || savingEdits) return;
+    setHistoryOpen(false);
+    setRequirement("");
+    setProjectId(null);
+    setProjectName("My AI project");
+    setContext("");
+    setMessages([]);
+    setPlan(null);
+    setRun(null);
+    setActiveVersion(null);
+    setAcceptedVersion(null);
+    setError(null);
+    setPlanUsage(null);
+    setResultSource("generation");
+  };
+
+  const saveEditedPlan = async (target: Readonly<{ projectId: string; version: number }>, editedPlan: ArchitecturePlan): Promise<void> => {
+    if (pending || savingEdits || accepting) throw new Error("Wait for the current operation to finish before saving edits.");
+    setSavingEdits(true);
+    try {
+      const { version } = await requestJson<GetProjectVersionResponse>(`${apiBaseUrl}/api/projects/${target.projectId}/versions`, {
+        method: "POST", body: JSON.stringify({ baseVersion: target.version, plan: editedPlan })
+      });
+      if (projectId === target.projectId && activeVersion === target.version) {
+        setPlan(version.plan); setActiveVersion(version.version); setRun(null);
+        setPlanUsage(null); setResultSource("user-edit");
+      }
+      setSavedPlanPreview((current) => current?.projectId === target.projectId && current.version === target.version
+        ? { projectId: target.projectId, version: version.version, plan: version.plan, accepted: false, usage: null, source: "user-edit" } : current);
+      setSavedProjects((current) => current.map((project) => project.id === target.projectId ? { ...project, currentVersion: version.version } : project));
+      // Saving is already committed: a history refresh failure must not invite a duplicate save.
+      try {
+        const [{ project }, { versions }] = await Promise.all([
+          requestJson<{ project: PlanningProject }>(`${apiBaseUrl}/api/projects/${target.projectId}`),
+          requestJson<ListProjectVersionsResponse>(`${apiBaseUrl}/api/projects/${target.projectId}/versions`)
+        ]);
+        setSavedProjects((current) => current.map((item) => item.id === project.id ? project : item));
+        setVersionsByProject((current) => ({ ...current, [project.id]: versions }));
+        setHistoryError(null);
+      } catch {
+        // Invalidate the old list so opening history fetches the committed version again.
+        setVersionsByProject((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== target.projectId)));
+        setHistoryError("Edits were saved. Reopen Saved plans to refresh version history.");
+      }
+    } finally { setSavingEdits(false); }
+  };
+
   return {
     projectName, setProjectName, context, setContext, requirement, setRequirement,
     projectId, activeVersion, savedProjects, versionsByProject, expandedHistoryProject,
     historyOpen, setHistoryOpen, openSavedPlans, historyLoading, historyError, messages, run, plan, savedPlanPreview,
     acceptedVersion, accepting, error, pending, loadProjectVersions, deleteSavedVersion, openSavedVersion,
-    handleSubmit, acceptPlan, cancelRun, stageLabels, statusOrder
+    handleSubmit, acceptPlan, cancelRun, startNewPlan, stageLabels, statusOrder,
+    saveEditedPlan, savingEdits, planUsage, resultSource
   };
 };
 

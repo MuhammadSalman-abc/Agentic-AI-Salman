@@ -111,17 +111,38 @@ void test("MongoDB replica-set planning repository integration", { skip: !uri },
       assert.equal([claimA, claimB].filter(Boolean).length, 1);
     });
 
+    await context.test("active project admission reuses identical input, rejects different input, and releases after cancellation", async () => {
+      const project = await createProject(repository, "Active project admission");
+      const results = await Promise.all(Array.from({ length: 8 }, (_, index) => createRun(repository, project.id, `different-key-${String(index)}`)));
+      assert.ok(results.every((result) => "run" in result));
+      const ids = results.flatMap((result) => "run" in result ? [result.run.id] : []);
+      assert.equal(new Set(ids).size, 1);
+      const different = await repository.createRun({ projectId: project.id, requirement: "Build a distinct shopping cart with stock checks.", instructions: "", idempotencyKey: "different-content", provider: "test", model: "test", promptVersion: "test" });
+      assert.ok("activeConflict" in different);
+      assert.equal(await GenerationRunModel.countDocuments({ projectId: project.id }), 1);
+      const runId = ids[0]; assert.ok(runId);
+      await repository.cancelRun(runId);
+      const next = await createRun(repository, project.id, "after-cancellation");
+      assert.ok("run" in next);
+      assert.notEqual(next.run.id, runId);
+      await repository.cancelRun(next.run.id);
+    });
+
     await context.test("generation commits a complete version and rejects stale concurrent edits", async () => {
       const project = await createProject(repository, "Atomic commit project");
       const created = await createRun(repository, project.id, "atomic-generation");
       assert.ok("run" in created);
       assert.ok(await repository.claimRun(created.run.id));
+      const usage = { inputTokens: 120, outputTokens: 80, totalTokens: 200 };
+      await repository.recordUsage(created.run.id, usage);
       const savedVersion = await repository.savePlan(created.run.id, project.id, null, plan);
       assert.equal(savedVersion, 1);
       const stored = await repository.getRun(created.run.id);
       assert.ok(stored);
       assert.equal(stored.run.status, "succeeded");
       assert.equal(stored.run.resultVersion, 1);
+      assert.deepEqual(stored.run.usage, usage);
+      assert.deepEqual((await repository.getVersion(project.id, 1))?.usage, usage);
       assert.ok(stored.plan);
       assert.equal((await repository.getProject(project.id))?.currentVersion, 1);
 
@@ -132,6 +153,8 @@ void test("MongoDB replica-set planning repository integration", { skip: !uri },
       assert.equal(edits.filter((result) => result.kind === "saved").length, 1);
       assert.equal(edits.filter((result) => result.kind === "conflict").length, 1);
       assert.equal((await repository.listVersions(project.id))?.length, 2);
+      assert.deepEqual((await repository.getVersion(project.id, 1))?.usage, usage);
+      assert.equal((await repository.getVersion(project.id, 2))?.usage, null);
     });
 
     await context.test("cancelled runs cannot commit a version", async () => {
@@ -192,7 +215,8 @@ void test("MongoDB replica-set planning repository integration", { skip: !uri },
     await context.test("restart recovery marks active runs interrupted and leaves queued runs resumable", async () => {
       const project = await createProject(repository, "Recovery project");
       const active = await createRun(repository, project.id, "active-before-restart");
-      const queued = await createRun(repository, project.id, "queued-before-restart");
+      const queuedProject = await createProject(repository, "Queued recovery project");
+      const queued = await createRun(repository, queuedProject.id, "queued-before-restart");
       assert.ok("run" in active && "run" in queued);
       assert.ok(await repository.claimRun(active.run.id));
 
