@@ -20,6 +20,7 @@
       "framework": "express",
       "runtime": "node",
       "entrypoint": "index.mts",
+      "outputDirectory": ".",
       "devCommand": "pnpm exec tsx vercel-dev.ts",
       "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
       "buildCommand": "pnpm run build",

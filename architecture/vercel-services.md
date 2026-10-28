@@ -61,6 +61,13 @@ The explicit `.mts` extension emits `.mjs`, preventing the entry module from bei
 interpreted as CommonJS if deployment packaging omits its package scope. TypeScript
 and ESLint include this entrypoint in their normal checks.
 
+The API service explicitly sets `outputDirectory: "."`. Without it, the Services
+backend builder can reuse `dist` after the TypeScript build and move `index.mjs`
+to the function root while traced pnpm dependencies retain their repository paths.
+That layout causes `ERR_MODULE_NOT_FOUND` despite the dependency being installed.
+Using the service root makes the builder bundle the source entrypoint and trace its
+runtime dependencies instead of deploying the raw TypeScript output directory.
+
 The standalone Node entrypoint and Vercel adapter share `createApiRuntime`. The standalone
 server retains its bounded waiting queue and restart recovery. The Vercel adapter connects
 to MongoDB lazily per warm instance and does **not** run global restart recovery on cold
@@ -82,6 +89,12 @@ require a shared queue/worker leases and are not claimed by this configuration.
 
 ## Verification
 
+- Packaging fix: the installed Vercel backend builder produced a source-based artifact
+  whose handler remains at `servers/api/index.mjs`. Its 1,246 returned files were
+  materialized into an isolated directory with pnpm links redirected inside that output.
+  Imports of `@vercel/functions`, Express, Mongoose and Zod succeeded there. Full handler
+  import hit a Windows-generated CommonJS-shim path issue; Linux/live runtime verification
+  remains pending. No database or LLM request was made during this packaging check.
 - `vercel.json` passed Vercel's official JSON schema through AJV.
 - API tests: **61/61**, including isolated replica-set persistence and serverless bootstrap.
 - Frontend tests: **9/9**, including same-origin prerender and runtime binding health calls.
@@ -107,5 +120,6 @@ cancellation, and saved-version reads before production is considered operationa
 - [Runtime-only bindings](https://vercel.com/docs/services/bindings)
 - [Service configuration](https://vercel.com/docs/services/config-reference)
 - [Express adapter](https://vercel.com/docs/frameworks/backend/express)
+- [Reported Services output-directory packaging issue](https://github.com/vercel/vercel/issues/17651)
 - [waitUntil lifetime](https://vercel.com/docs/functions/functions-api-reference/vercel-functions-package#waituntil)
 - [Pinned package managers](https://vercel.com/docs/package-managers)
