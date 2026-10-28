@@ -53,6 +53,11 @@ Keys and database URLs remain server environment variables, outside version cont
 
 ## Runtime behavior and limits
 
+The Vercel Express entrypoint is `servers/api/index.ts`: it imports Express directly
+and exports the application without listening on a port. Both the service entrypoint
+and function-duration configuration target this file. `server.ts` remains the standalone
+Node process entrypoint. The API package already declares `"type": "module"`.
+
 The standalone Node entrypoint and Vercel adapter share `createApiRuntime`. The standalone
 server retains its bounded waiting queue and restart recovery. The Vercel adapter connects
 to MongoDB lazily per warm instance and does **not** run global restart recovery on cold

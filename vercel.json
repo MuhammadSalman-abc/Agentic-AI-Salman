@@ -19,12 +19,12 @@
       "root": "servers/api",
       "framework": "express",
       "runtime": "node",
-      "entrypoint": "vercel.ts",
+      "entrypoint": "index.ts",
       "devCommand": "pnpm exec tsx vercel-dev.ts",
       "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
       "buildCommand": "pnpm run build",
       "functions": {
-        "vercel.ts": {
+        "index.ts": {
           "maxDuration": 300
         }
       }
