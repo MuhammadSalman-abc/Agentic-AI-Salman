@@ -65,3 +65,17 @@ void test("shutdown drains the active call and leaves waiting jobs unexecuted fo
   blocker.resolve(); await stop;
   assert.equal(stopped, true);
 });
+
+void test("serverless hook receives the complete active job lifetime and zero waiting slots reject overflow", async () => {
+  const blocker = deferred();
+  const lifetimes: Promise<void>[] = [];
+  const queue = createGenerationQueue({ concurrency: 1, maxQueued: 0, onError: () => assert.fail("Unexpected failure"), onBackgroundTask: (task) => { lifetimes.push(task); } });
+  const reservation = queue.reserve(); assert.ok(reservation);
+  reservation.submit({ id: "tracked", execute: () => blocker.promise });
+  assert.equal(queue.reserve(), null);
+  assert.equal(lifetimes.length, 1);
+  blocker.resolve();
+  await Promise.all(lifetimes);
+  assert.equal(queue.snapshot().active, 0);
+  await queue.close();
+});

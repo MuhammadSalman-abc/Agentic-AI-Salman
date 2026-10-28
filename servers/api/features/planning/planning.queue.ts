@@ -1,8 +1,9 @@
 type Job = Readonly<{ id: string; execute: () => Promise<void> }>;
 
 /** One runtime owns this bounded FIFO; run records remain durable in MongoDB. */
-export const createGenerationQueue = ({ concurrency, maxQueued, onError }: Readonly<{
+export const createGenerationQueue = ({ concurrency, maxQueued, onError, onBackgroundTask }: Readonly<{
   concurrency: number; maxQueued: number; onError: (error: unknown) => void;
+  onBackgroundTask?: ((task: Promise<void>) => void) | undefined;
 }>) => {
   if (!Number.isInteger(concurrency) || concurrency < 1 || !Number.isInteger(maxQueued) || maxQueued < 0) throw new Error("Invalid generation queue limits");
   const waiting: Job[] = [];
@@ -17,9 +18,10 @@ export const createGenerationQueue = ({ concurrency, maxQueued, onError }: Reado
       const job = waiting.shift();
       if (!job) break;
       active++;
-      void Promise.resolve().then(job.execute).catch(onError).finally(() => {
+      const task = Promise.resolve().then(job.execute).catch(onError).finally(() => {
         active--; scheduled.delete(job.id); reserved--; drain(); notify();
       });
+      onBackgroundTask?.(task);
     }
   };
   const reserve = () => {

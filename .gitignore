@@ -10,3 +10,4 @@ coverage/
 !.env.example
 .test-tmp-*/
 .lint-staged-governance-*/
+.vercel/

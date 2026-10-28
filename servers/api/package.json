@@ -1,5 +1,6 @@
 {
   "name": "@workspace/api",
+  "packageManager": "pnpm@11.19.0",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -8,11 +9,12 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "test:load": "tsx --test integrations/mongodb/load/planning.load.test.ts",
-    "test": "tsx --test features/health/tests/*.test.ts features/planning/tests/*.test.ts tests/environment.test.ts tests/http-boundaries.test.ts tests/llm-provider.test.ts tests/mongodb.test.ts integrations/mongodb/tests/*.test.ts tests/shutdown.test.ts tests/rate-limit.test.ts",
+    "test": "tsx --test features/health/tests/*.test.ts features/planning/tests/*.test.ts tests/environment.test.ts tests/http-boundaries.test.ts tests/llm-provider.test.ts tests/mongodb.test.ts integrations/mongodb/tests/*.test.ts tests/shutdown.test.ts tests/rate-limit.test.ts tests/serverless.test.ts",
     "lint": "eslint \"**/*.ts\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@vercel/functions": "^3.10.4",
     "@workspace/logging": "workspace:*",
     "@workspace/types": "workspace:*",
     "dotenv": "^17.2.2",

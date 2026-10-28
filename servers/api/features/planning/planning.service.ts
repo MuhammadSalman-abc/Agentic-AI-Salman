@@ -103,6 +103,7 @@ type PlanningServiceDependencies = Readonly<{
   persistenceAvailable: boolean;
   logger: Logger;
   queueLimits?: Readonly<{ concurrency: number; maxQueued: number }>;
+  onBackgroundTask?: ((task: Promise<void>) => void) | undefined;
 }>;
 
 const missingProviderError = () => createApplicationError({
@@ -111,8 +112,9 @@ const missingProviderError = () => createApplicationError({
   status: HTTP_STATUS.serviceUnavailable
 });
 
-export const createPlanningService = ({ repository, provider, configuration, persistenceAvailable, logger, queueLimits }: PlanningServiceDependencies) => {
+export const createPlanningService = ({ repository, provider, configuration, persistenceAvailable, logger, queueLimits, onBackgroundTask }: PlanningServiceDependencies) => {
   const queue = createGenerationQueue({ concurrency: queueLimits?.concurrency ?? 1, maxQueued: queueLimits?.maxQueued ?? 20,
+    onBackgroundTask,
     onError: (error) => { logger.error("Could not execute queued generation.", { error: error instanceof Error ? error.message : String(error) }); } });
   const executeRun = async (runId: string): Promise<void> => {
     const claimed = await repository.claimRun(runId);
