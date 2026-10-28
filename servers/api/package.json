@@ -10,7 +10,7 @@
     "start": "node dist/server.js",
     "test:load": "tsx --test integrations/mongodb/load/planning.load.test.ts",
     "test": "tsx --test features/health/tests/*.test.ts features/planning/tests/*.test.ts tests/environment.test.ts tests/http-boundaries.test.ts tests/llm-provider.test.ts tests/mongodb.test.ts integrations/mongodb/tests/*.test.ts tests/shutdown.test.ts tests/rate-limit.test.ts tests/serverless.test.ts",
-    "lint": "eslint \"**/*.ts\"",
+    "lint": "eslint \"**/*.{ts,mts}\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

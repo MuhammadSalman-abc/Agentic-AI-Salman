@@ -1,3 +1,4 @@
+// .mts preserves explicit ESM output (.mjs) even when deployment packaging loses package scope.
 import { waitUntil } from "@vercel/functions";
 import express, { type Express } from "express";
 import { createLogger } from "@workspace/logging";

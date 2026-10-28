@@ -53,10 +53,13 @@ Keys and database URLs remain server environment variables, outside version cont
 
 ## Runtime behavior and limits
 
-The Vercel Express entrypoint is `servers/api/index.ts`: it imports Express directly
+The Vercel Express entrypoint is `servers/api/index.mts`: it imports Express directly
 and exports the application without listening on a port. Both the service entrypoint
 and function-duration configuration target this file. `server.ts` remains the standalone
 Node process entrypoint. The API package already declares `"type": "module"`.
+The explicit `.mts` extension emits `.mjs`, preventing the entry module from being
+interpreted as CommonJS if deployment packaging omits its package scope. TypeScript
+and ESLint include this entrypoint in their normal checks.
 
 The standalone Node entrypoint and Vercel adapter share `createApiRuntime`. The standalone
 server retains its bounded waiting queue and restart recovery. The Vercel adapter connects
