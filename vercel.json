@@ -7,7 +7,12 @@
       "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
       "buildCommand": "pnpm run build",
       "bindings": [
-        { "type": "service", "service": "api", "format": "url", "env": "API_SERVICE_URL" }
+        {
+          "type": "service",
+          "service": "api",
+          "format": "url",
+          "env": "API_SERVICE_URL"
+        }
       ]
     },
     "api": {
@@ -19,12 +24,24 @@
       "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
       "buildCommand": "pnpm run build",
       "functions": {
-        "vercel.ts": { "maxDuration": 300 }
+        "vercel.ts": {
+          "maxDuration": 300
+        }
       }
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": { "service": "api" } },
-    { "source": "/(.*)", "destination": { "service": "web" } }
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
   ]
 }
