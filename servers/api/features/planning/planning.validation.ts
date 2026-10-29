@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isActionableRequirement, requirementClarification } from "./planning-intent.js";
 
 export class PlanValidationError extends Error {
   constructor(message: string) {
@@ -26,13 +27,15 @@ export const projectListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50)
 }).strict();
 
+const requirementInputSchema = z.string().trim().min(1).max(12_000).refine(isActionableRequirement, { message: requirementClarification });
+
 export const generatePlanInputSchema = z.object({
-  requirement: z.string().trim().min(20).max(12_000),
+  requirement: requirementInputSchema,
   instructions: z.string().trim().max(2_000).optional()
 }).strict();
 
 export const findSavedRequirementInputSchema = z.object({
-  requirement: z.string().trim().min(20).max(12_000),
+  requirement: requirementInputSchema,
   context: z.string().trim().max(8_000).default("")
 }).strict();
 

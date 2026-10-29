@@ -62,7 +62,7 @@ export const PlanResult = ({ plan, version, accepted, accepting, onAccept, onSav
   const visibleTasks = plan.tasks.filter(({ storyId }) => visibleStoryIds.has(storyId));
 
   return (
-    <Card className="overflow-hidden rounded-[1.4rem] border-slate-200/80 bg-white shadow-sm shadow-slate-950/[0.025]">
+    <Card className="plan-result overflow-hidden rounded-[1.4rem] border-slate-200/80 bg-white shadow-sm shadow-slate-950/[0.025]">
       <div className="border-b border-slate-100 bg-gradient-to-br from-white via-white to-violet-50/50 p-5 sm:p-6">
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-700 shadow-sm"><Check aria-hidden="true" className="size-5" /></span>

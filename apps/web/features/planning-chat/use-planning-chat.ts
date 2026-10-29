@@ -2,28 +2,15 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { isSmallTalk } from "./message-intent";
+import { requestJson, requirementClarification, RequirementClarificationError } from "./planning-request";
 import type {
   AcceptProjectVersionResponse, ArchitecturePlan, CreateProjectResponse, CreateRunResponse, FindSavedRequirementResponse, GetProjectVersionResponse,
   GetRunResponse, ListProjectsResponse, ListProjectVersionsResponse, PlanningProject, PlanningRun, PlanningTokenUsage, PlanningVersionSummary
 } from "@workspace/types";
 
-type ApiFailure = Readonly<{ error?: Readonly<{ message?: string }> }>;
 type ChatMessage = Readonly<{ id: string; role: "user" | "assistant"; text: string }>;
 type SavedPlanPreview = Readonly<{ projectId: string; version: number; plan: ArchitecturePlan; accepted: boolean; usage: PlanningTokenUsage | null; source: "generation" | "user-edit" }>;
 
-const requestJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(url, {
-    cache: "no-store",
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers }
-  });
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const failure = body as ApiFailure | null;
-    throw new Error(failure?.error?.message ?? `Request failed with status ${response.status}.`);
-  }
-  return body as T;
-};
 
 const stageLabels: Readonly<Record<PlanningRun["status"], string>> = {
   queued: "Getting things ready…",
@@ -196,36 +183,39 @@ const usePlanningChat = (apiBaseUrl: string) => {
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        text: "Main theek hoon, shukriya! Tum sunao? Jab app ya software ki requirement plan karwani ho, bas uska idea bhej dena."
+        text: requirementClarification
       };
       setMessages((current) => [...current, userMessage, assistantMessage]);
+      setRequirement(submittedRequirement);
       return;
     }
 
-    if (submittedRequirement.length < 20) {
+    if (submittedRequirement.length < 3) {
       const assistantMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        text: "Apni requirement thodi aur detail se batayein—yeh kis user ke liye hai, aur woh kya karna chahta hai?"
+        text: requirementClarification
       };
       setMessages((current) => [...current, userMessage, assistantMessage]);
+      setRequirement(submittedRequirement);
       return;
     }
 
-    setMessages([userMessage]);
     setPending(true);
     setRun(null);
-    setPlan(null);
-    setActiveVersion(null);
-    setAcceptedVersion(null);
-    setPlanUsage(null);
-    setResultSource("generation");
 
     try {
       const { match } = await requestJson<FindSavedRequirementResponse>(`${apiBaseUrl}/api/planning/versions/lookup`, {
         method: "POST",
         body: JSON.stringify({ requirement: submittedRequirement, context: context.trim() })
       });
+      setMessages([userMessage]);
+      setRun(null);
+      setPlan(null);
+      setActiveVersion(null);
+      setAcceptedVersion(null);
+      setPlanUsage(null);
+      setResultSource("generation");
       if (match) {
         const assistantMessage: ChatMessage = {
           id: crypto.randomUUID(),
@@ -288,7 +278,10 @@ const usePlanningChat = (apiBaseUrl: string) => {
       }
       if (latest.status === "failed") setError(latest.error?.message ?? "Plan generation failed. Please try again.");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The API could not be reached.");
+      if (cause instanceof RequirementClarificationError) {
+        setMessages((current) => [...current, userMessage, { id: crypto.randomUUID(), role: "assistant", text: requirementClarification }]);
+        setRequirement(submittedRequirement);
+      } else setError(cause instanceof Error ? cause.message : "The API could not be reached.");
     } finally {
       setPending(false);
     }

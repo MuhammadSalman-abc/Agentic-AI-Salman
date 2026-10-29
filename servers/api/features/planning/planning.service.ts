@@ -5,14 +5,16 @@ import { createApplicationError } from "../../errors/index.js";
 import type { ApiConfig } from "../../types/index.js";
 import { LlmProviderError, type LlmProvider } from "../../integrations/llm/provider.js";
 import { ZodError } from "zod";
-import { architecturePlanSchema, PlanValidationError, validateAndOrderPlan } from "./planning.validation.js";
+import { architecturePlanSchema, findSavedRequirementInputSchema, generatePlanInputSchema, PlanValidationError, validateAndOrderPlan } from "./planning.validation.js";
 import { completeMissingTestCoverage } from "./planning-test-coverage.js";
+import { normalizeTestingLayers } from "./planning-task-layers.js";
 import { createGenerationQueue } from "./planning.queue.js";
 import type { createPlanningRepository } from "./planning.repository.js";
 
-const promptVersion = "planning-v1.7.0";
+const promptVersion = "planning-v1.7.1";
 const featureCountGuidance = "Create between 3 and 10 meaningful Features, and never return more than 10. Decompose a narrow brief into genuinely useful areas without duplicating scope or inventing unrelated capabilities. If the requirement has more than 10 areas, group related capabilities into cohesive Features while preserving requirement coverage.";
 const planningInstructions = `You are a concise software requirements-to-plan assistant. Analyze the brief and return the complete plan in this single response. ${featureCountGuidance}
+Testing tasks must use taskType "testing" and layer "testing", including tests of backend APIs, frontend UI, data, and integrations. The subject under test belongs in the description, not the layer.
 Scope: include only requested capabilities. Identify domain prerequisites needed to satisfy the request (for example, a menu is needed before items can be added to a restaurant order); represent each as an explicit scoped story or as an assumption/open question. Do not silently add optional products or integrations. Never add a payment gateway, payment-failure tests, notifications, roles, platforms, or compliance obligations unless requested or explicitly recorded as an assumption/open question.
 Stories: write every description as "As a [role], I want [capability] so that [benefit]." Preserve the user's intent; if role or benefit is unknown, use a neutral role and record meaningful uncertainty as an assumption/open question.
 Priorities: assign low/medium/high/critical according to value, dependencies, and risk; do not mark everything high. Set feature priority to reflect its stories while allowing a lower-priority story when justified. Tasks normally inherit story priority; lower test priority only when the tested behavior is genuinely lower priority. Use critical only for a real blocker. Do not invent an MVP boundary—state it as an assumption if inferred.
@@ -152,7 +154,7 @@ export const createPlanningService = ({ repository, provider, configuration, per
       await repository.updateStage(objectId, "validating", 1);
       const normalizedCandidate = normalizePlanPriorities(normalizeAcceptanceCriteria(candidate));
       const candidatePlan = architecturePlanSchema.parse(normalizedCandidate);
-      const testCompletePlan = completeMissingTestCoverage(candidatePlan);
+      const testCompletePlan = completeMissingTestCoverage(normalizeTestingLayers(candidatePlan));
       const validPlan = validateAndOrderPlan(testCompletePlan, { minimumFeatureCount: 3, maximumFeatureCount: 10, requireAcceptanceCriteriaCoverage: true, requireTaskLayers: true });
       const committed = await repository.savePlan(objectId, claimed.projectId, run.baseVersion, validPlan);
       if (committed === null) throw new Error("VERSION_CONFLICT");
@@ -225,6 +227,7 @@ export const createPlanningService = ({ repository, provider, configuration, per
     },
 
     createRun: async (input: { projectId: string; requirement: string; instructions?: string; idempotencyKey: string }) => {
+      generatePlanInputSchema.parse({ requirement: input.requirement, ...(input.instructions !== undefined ? { instructions: input.instructions } : {}) });
       requirePersistence();
       if (!provider || !configuration) throw missingProviderError();
       if (!repository.isValidProjectId(input.projectId)) throw createApplicationError({
@@ -283,6 +286,7 @@ export const createPlanningService = ({ repository, provider, configuration, per
     },
 
     findSavedRequirement: async (input: { requirement: string; context: string }) => {
+      findSavedRequirementInputSchema.parse(input);
       requirePersistence();
       return repository.findSavedRequirement(input);
     },

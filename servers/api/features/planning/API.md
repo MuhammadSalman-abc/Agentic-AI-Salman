@@ -28,6 +28,22 @@ already used by another project returns `409 project_name_conflict`. Success ret
 
 ## Generation runs
 
+Generated tasks explicitly typed `testing` are locally normalized to the `testing`
+layer before the final validation gate. The tested backend/frontend/data/integration
+remains described in the task text. This does not add a provider call, change task
+content or dependencies, or bypass validation of development layers and references.
+
+Requirement admission uses a local heuristic, without another LLM call. The requirement
+must be 1–12,000 characters and describe a software capability. Greetings, unrelated
+questions and vague briefs return `400 validation_error` with a `custom` issue at
+`["requirement"]` containing the guidance: "Tell me what you’d like to build. Describe
+an app, website, or feature, and I’ll turn your requirement into features, user stories,
+and tasks." A second paragraph gives the task-manager example. The saved-requirement lookup applies the same
+check before database access, allowing the chat to show guidance before creating a
+project or generation run. The UI preserves the draft and existing plan and handles
+this specific rejection as an assistant message; other API failures remain errors.
+This heuristic supports common English/Roman Urdu inputs but is not a semantic guarantee.
+
 ### Admission and rate limits
 
 The supported deployment is one API worker process. Defaults, configurable through

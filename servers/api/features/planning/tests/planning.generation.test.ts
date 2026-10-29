@@ -261,6 +261,37 @@ void test("new plans require task layers while legacy plans remain readable", ()
   assert.throws(() => validateAndOrderPlan(missingLayers, { requireTaskLayers: true }), /needs exactly one layer/);
 });
 
+void test("testing layers are normalized without another provider call or changing task content", async () => {
+  for (const layer of ["backend", "frontend", "data", "integration", undefined]) {
+    const plan = createPlan(3);
+    const candidate = { ...plan, tasks: plan.tasks.map((task) => {
+      if (task.taskType !== "testing") return task;
+      return { ...task, layer };
+    }) };
+    const original = structuredClone(candidate);
+    const harness = createGenerationHarness(3, { generateJson: () => Promise.resolve(candidate) });
+    await harness.service.createRun({ projectId, requirement: "As a user, I want to upload my resume and get AI suggestions so that I can improve my chances of getting a job.", idempotencyKey: `test-layer-${String(layer)}` });
+    const completion = await waitForGeneration(harness);
+    assert.equal(completion.kind, "saved");
+    assert.equal(harness.requests.length, 1);
+    assert.deepEqual(candidate, original, "Provider response must not be mutated");
+    for (const task of completion.plan.tasks) {
+      const expected = plan.tasks.find(({ id }) => id === task.id);
+      assert.ok(expected);
+      assert.equal(task.layer, expected.layer);
+      assert.equal(task.description, expected.description);
+      assert.deepEqual(task.dependsOn, expected.dependsOn);
+      assert.deepEqual(task.acceptanceCriteriaIndexes, expected.acceptanceCriteriaIndexes);
+    }
+  }
+});
+
+void test("strict validation still rejects mismatched task types and layers", () => {
+  const plan = createPlan(3);
+  assert.throws(() => validateAndOrderPlan({ ...plan, tasks: plan.tasks.map((task) => task.taskType === "testing" ? { ...task, layer: "backend" } : task) }, { requireTaskLayers: true }), /must use the testing layer/);
+  assert.throws(() => validateAndOrderPlan({ ...plan, tasks: plan.tasks.map((task) => task.taskType === "technical_development" ? { ...task, layer: "testing" } : task) }, { requireTaskLayers: true }), /needs a backend, frontend, data, or integration layer/);
+});
+
 void test("one provider call returns the complete plan and preserves seven Features", async () => {
   const harness = createGenerationHarness(7);
   await harness.service.createRun({

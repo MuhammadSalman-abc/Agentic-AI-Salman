@@ -9,7 +9,7 @@ import { RuntimeFoundation } from "./runtime-foundation";
 type WorkspaceFoundationProps = Readonly<{ apiBaseUrl: string }>;
 
 export const WorkspaceFoundation = ({ apiBaseUrl }: WorkspaceFoundationProps): ReactElement => (
-  <main className="relative min-h-screen overflow-hidden bg-[#f5f7ff] px-4 py-5 font-sans text-slate-900 sm:px-8 sm:py-8 lg:px-12">
+  <main className="workspace-home relative min-h-screen overflow-hidden bg-[#f5f7ff] px-4 py-5 font-sans text-slate-900 sm:px-8 sm:py-8 lg:px-12">
     <div aria-hidden="true" className="pointer-events-none absolute -left-36 top-40 size-96 rounded-full bg-violet-300/30 blur-3xl" />
     <div aria-hidden="true" className="pointer-events-none absolute -right-32 top-0 size-[30rem] rounded-full bg-cyan-200/35 blur-3xl" />
 
@@ -51,7 +51,7 @@ export const WorkspaceFoundation = ({ apiBaseUrl }: WorkspaceFoundationProps): R
           <p className="mt-5 max-w-lg text-base leading-7 text-indigo-100 sm:text-lg">
             Shape your software vision into thoughtful features, user stories, and tasks—ready for your review.
           </p>
-          <Button asChild className="mt-8 h-12 rounded-xl bg-white px-5 text-sm font-bold text-indigo-800 shadow-lg shadow-indigo-950/20 hover:bg-cyan-50" size="lg">
+          <Button asChild className="workspace-cta mt-8 h-12 rounded-xl bg-white px-5 text-sm font-bold text-indigo-800 shadow-lg shadow-indigo-950/20 hover:bg-cyan-50" size="lg">
             <Link href="/agentic-ai">Open your AI workspace <ArrowRight aria-hidden="true" /></Link>
           </Button>
           <p className="mt-3 flex items-center gap-1.5 text-xs text-indigo-200"><Check aria-hidden="true" className="size-3.5" /> AI suggests. You stay in control.</p>

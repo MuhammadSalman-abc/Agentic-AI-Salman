@@ -49,7 +49,7 @@ export const PlanEditor = ({ plan, version, onSave, disabled = false }: PlanEdit
   };
 
   return <>
-    <Button className="rounded-xl border-slate-200 text-xs text-slate-600" disabled={disabled} onClick={() => {
+    <Button className="rounded-xl border-slate-200 bg-white text-xs text-slate-600 hover:bg-slate-50" disabled={disabled} onClick={() => {
       setDraft(plan); setKind("features"); setSelectedId(plan.features[0]?.id ?? ""); setError(null); setOpen(true);
     }} size="sm" type="button" variant="outline"><Pencil className="size-3.5" />Edit plan</Button>
     <Dialog open={open} onOpenChange={(next) => { if (!saving) setOpen(next); }}>

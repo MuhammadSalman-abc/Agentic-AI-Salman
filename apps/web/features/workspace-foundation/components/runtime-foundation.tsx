@@ -26,7 +26,7 @@ export const RuntimeFoundation = (): ReactElement => (
     </div>
     <div className="grid gap-3 md:grid-cols-3">
       {runtimes.map(({ label, detail, icon: Icon, tone, iconTone }) => (
-        <article className={`rounded-2xl border border-white bg-gradient-to-br ${tone} p-4 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md sm:p-5`} key={label}>
+        <article className={`foundation-card rounded-2xl border border-white bg-gradient-to-br ${tone} p-4 shadow-sm shadow-slate-200/70 transition duration-200 hover:-translate-y-0.5 hover:shadow-md sm:p-5`} key={label}>
           <div className="flex items-start justify-between">
             <span className={`flex size-10 items-center justify-center rounded-xl ${iconTone}`}><Icon aria-hidden="true" className="size-5" /></span>
             <span className="mt-1 rounded-full bg-white/80 px-2 py-1 text-[10px] font-medium text-slate-500">{label.startsWith("Web") ? "Frontend" : label.startsWith("API") ? "Backend" : "Storage"}</span>

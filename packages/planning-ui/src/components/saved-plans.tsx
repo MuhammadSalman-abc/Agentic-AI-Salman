@@ -38,7 +38,7 @@ export const SavedPlans = ({ projects, versionsByProject, expandedProjectId, act
   });
 
   return (
-  <section aria-label="Saved plans history" className="mx-auto w-full rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-950/[0.025] sm:p-6">
+  <section aria-label="Saved plans history" className="saved-plans mx-auto w-full rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-950/[0.025] sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 items-center gap-2">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-100 to-sky-100 text-violet-700"><ClipboardList aria-hidden="true" className="size-4" /></span>
@@ -66,12 +66,12 @@ export const SavedPlans = ({ projects, versionsByProject, expandedProjectId, act
         {expandedProjectId === project.id && <div className="mt-3 space-y-1.5 border-t border-violet-100 pt-3">
           {(versionsByProject[project.id] ?? []).filter((version) => !query || project.name.toLocaleLowerCase().includes(query) || version.requirementSummary?.toLocaleLowerCase().includes(query)).map((version) => {
             const selected = project.id === activeProjectId && version.version === activeVersion;
-            return <div className={`flex items-start gap-1 rounded-xl pr-1 transition ${selected ? "bg-violet-100 text-violet-900 ring-1 ring-violet-200" : "text-slate-700 hover:bg-violet-50"}`} key={version.version}>
-              <button aria-current={selected ? "true" : undefined} className="flex min-w-0 flex-1 items-start gap-3 rounded-xl px-3 py-2.5 text-left" onClick={() => { onSelectVersion(project, version.version); }} type="button">
+            return <div className={`flex items-start gap-1 rounded-xl pr-1 transition-colors duration-150 motion-reduce:transition-none ${selected ? "bg-violet-500/10 text-violet-900 ring-1 ring-violet-400/40 dark:bg-violet-400/15 dark:text-violet-200" : "text-slate-700 hover:bg-violet-500/[0.07] focus-within:bg-violet-500/[0.07] dark:hover:bg-violet-400/10 dark:focus-within:bg-violet-400/10"}`} key={version.version}>
+              <button aria-current={selected ? "true" : undefined} className="flex min-w-0 flex-1 items-start gap-3 rounded-xl px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-inset" onClick={() => { onSelectVersion(project, version.version); }} type="button">
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white text-[10px] font-bold text-violet-700 shadow-sm">V{version.version}</span>
                 <span className="min-w-0 flex-1"><span className="line-clamp-2 break-words text-xs font-semibold" title={version.requirementSummary ?? undefined}>{version.requirementSummary?.trim() || (version.source === "generation" ? "AI generated plan" : `Edits to version ${String(version.basedOnVersion ?? "previous")}`)}</span><span className="mt-1 block text-[10px] text-slate-400">{version.source === "generation" ? "AI plan" : "Edited"} · {new Date(version.createdAt).toLocaleDateString()}</span></span>
               </button>
-              <button aria-label={`Remove version ${String(version.version)}`} className="mt-2 rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" onClick={() => { onRemoveVersion(project, version.version); }} title="Remove version; remaining versions will be renumbered" type="button"><Trash2 aria-hidden="true" className="size-3.5" /></button>
+              <button aria-label={`Remove version ${String(version.version)}`} className="mt-2 rounded-lg p-1.5 text-slate-400 transition-colors duration-150 hover:bg-rose-500/10 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 dark:hover:text-rose-300 motion-reduce:transition-none" onClick={() => { onRemoveVersion(project, version.version); }} title="Remove version; remaining versions will be renumbered" type="button"><Trash2 aria-hidden="true" className="size-3.5" /></button>
             </div>;
           })}
           {(versionsByProject[project.id] ?? []).length === 0 && <p className="px-3 py-2 text-[11px] text-slate-500">No generated versions yet.</p>}

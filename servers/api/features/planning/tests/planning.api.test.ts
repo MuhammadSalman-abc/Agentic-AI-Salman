@@ -72,6 +72,20 @@ const service: PlanningHttpService = {
 };
 const controller = createPlanningController({ service });
 
+void test("clarification rejects lookup and generation before invoking the service", async () => {
+  let lookups = 0;
+  let generations = 0;
+  const guarded = createPlanningController({ service: {
+    ...service,
+    findSavedRequirement: () => { lookups++; return Promise.resolve(null); },
+    createRun: () => { generations++; return Promise.resolve(run); }
+  } });
+  await assert.rejects(() => invoke(guarded.findSavedRequirement, { body: { requirement: "What can you do for me today?" } }));
+  await assert.rejects(() => invoke(guarded.createRun, { params: { projectId: project.id }, headers: { "idempotency-key": "chat-only" }, body: { requirement: "han bhai kia hall he kese he" } }));
+  assert.equal(lookups, 0);
+  assert.equal(generations, 0);
+});
+
 type RequestInput = Readonly<{
   body?: unknown;
   params?: Record<string, string>;
